@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1-godot - 2026-09-10
+
+- Added `renderDistanceChunks` to `assets/worldgen.json`.
+- Changed world rendering to stream only chunks near the player instead of rendering the full map at once.
+- Changed new-world startup to spawn the player before building visible chunk meshes.
+- Reduced mesh groups and material duplication for blocks using one texture on all faces.
+- Reduced unnecessary HUD text rewrites.
+
 ## 0.3.0-godot - 2026-09-10
 
 - Added Survival and Creative mode selection from the title menu.

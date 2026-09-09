@@ -11,6 +11,7 @@
   "caveChance": 0.18,
   "mountainStrength": 18.0,
   "hillStrength": 7.0,
+  "renderDistanceChunks": 1,
   "randomSeedOnStart": false,
   "spawnPlateauRadius": 9,
   "spawnPlateauHeight": 13

@@ -3,7 +3,7 @@ extends Node3D
 const BLOCKS_PATH := "res://assets/blocks.json"
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
-const VERSION_LABEL := "0.3.0"
+const VERSION_LABEL := "0.3.1"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -19,6 +19,7 @@ const FACE_FORWARD := 4
 const FACE_BACK := 5
 const CHUNK_SIZE := 16
 const HUD_REFRESH_TIME := 0.15
+const CHUNK_STREAM_CHECK_TIME := 0.25
 const MODE_SURVIVAL := "survival"
 const MODE_CREATIVE := "creative"
 const MAX_HEALTH := 20
@@ -63,11 +64,14 @@ var world := {}
 var chunk_blocks := {}
 var chunk_nodes := {}
 var chunk_face_counts := {}
+var visible_chunk_keys := {}
 var selected_slot := 0
 var selected_target = null
 var worldgen := {}
 var world_seed := 1
 var block_count := 0
+var render_distance_chunks := 1
+var last_stream_chunk := Vector2i(999999, 999999)
 var velocity := Vector3.ZERO
 var grounded := false
 var game_active := false
@@ -79,6 +83,7 @@ var retro_fog := false
 var message := "Clique sur Jouer pour commencer."
 var step_timer := 0.0
 var hud_timer := 0.0
+var chunk_stream_timer := 0.0
 var last_status_text := ""
 var last_health_text := ""
 var last_debug_text := ""
@@ -98,8 +103,8 @@ func _ready() -> void:
 	_setup_ui()
 	_setup_world_nodes()
 	_generate_world()
-	_rebuild_meshes()
 	_spawn_player()
+	_rebuild_meshes()
 	_update_hud()
 
 
@@ -108,6 +113,10 @@ func _physics_process(delta: float) -> void:
 		return
 	was_grounded = grounded
 	_update_movement(delta)
+	chunk_stream_timer -= delta
+	if chunk_stream_timer <= 0.0:
+		chunk_stream_timer = CHUNK_STREAM_CHECK_TIME
+		_update_streamed_chunks()
 	_update_fall_damage()
 	_update_dropped_items(delta)
 	_update_target()
@@ -150,6 +159,7 @@ func _load_game_data() -> void:
 
 	worldgen = world_data
 	world_seed = int(worldgen.get("seed", 1))
+	render_distance_chunks = maxi(0, int(worldgen.get("renderDistanceChunks", 1)))
 	hotbar = block_data.get("hotbar", [])
 	placeable_blocks.clear()
 
@@ -159,6 +169,8 @@ func _load_game_data() -> void:
 			continue
 		if bool(block.get("placeable", true)):
 			block["materials"] = block_material_factory.create_block_materials(block)
+			var texture_paths: Dictionary = block.get("textures", {})
+			block["singleMaterial"] = texture_paths.has("all")
 			placeable_blocks.append(id)
 		blocks[id] = block
 
@@ -724,15 +736,36 @@ func _rebuild_meshes() -> void:
 		_clear_chunk_meshes(chunk_key)
 	chunk_nodes.clear()
 	chunk_face_counts.clear()
+	visible_chunk_keys.clear()
 	block_count = 0
+	last_stream_chunk = Vector2i(999999, 999999)
+	_update_streamed_chunks(true)
 
-	var chunks_to_build := {}
-	for key in world.keys():
-		var p := _parse_key(key)
-		chunks_to_build[VoxelMathScript.chunk_key_for_block(p, CHUNK_SIZE)] = true
 
-	for chunk_key in chunks_to_build.keys():
-		_rebuild_chunk(chunk_key)
+func _update_streamed_chunks(force: bool = false) -> void:
+	if camera == null:
+		return
+	var center := _chunk_coords_for_world_position(camera.position)
+	if not force and center == last_stream_chunk:
+		return
+	last_stream_chunk = center
+	var desired := _desired_chunk_keys(center)
+
+	for chunk_key in visible_chunk_keys.keys():
+		if not desired.has(chunk_key):
+			_clear_chunk_meshes(chunk_key)
+
+	for chunk_key in desired.keys():
+		if not visible_chunk_keys.has(chunk_key):
+			_rebuild_chunk(chunk_key)
+
+
+func _desired_chunk_keys(center: Vector2i) -> Dictionary:
+	var desired := {}
+	for cx in range(center.x - render_distance_chunks, center.x + render_distance_chunks + 1):
+		for cz in range(center.y - render_distance_chunks, center.y + render_distance_chunks + 1):
+			desired[_chunk_key_from_coords(cx, cz)] = true
+	return desired
 
 
 func _rebuild_nearby_chunks(pos: Vector3i) -> void:
@@ -743,21 +776,25 @@ func _rebuild_nearby_chunks(pos: Vector3i) -> void:
 	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.FORWARD, CHUNK_SIZE)] = true
 	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.BACK, CHUNK_SIZE)] = true
 	for chunk_key in chunks_to_build.keys():
-		_rebuild_chunk(chunk_key)
+		if visible_chunk_keys.has(chunk_key):
+			_rebuild_chunk(chunk_key)
 	_update_hud()
 
 
-func _clear_chunk_meshes(chunk_key: String) -> void:
+func _clear_chunk_meshes(chunk_key: String, forget_visible: bool = true) -> void:
 	for node in chunk_nodes.get(chunk_key, []):
 		if is_instance_valid(node):
 			node.queue_free()
 	block_count -= int(chunk_face_counts.get(chunk_key, 0))
 	chunk_nodes.erase(chunk_key)
 	chunk_face_counts.erase(chunk_key)
+	if forget_visible:
+		visible_chunk_keys.erase(chunk_key)
 
 
 func _rebuild_chunk(chunk_key: String) -> void:
-	_clear_chunk_meshes(chunk_key)
+	_clear_chunk_meshes(chunk_key, false)
+	visible_chunk_keys[chunk_key] = true
 	var keys: Array = chunk_blocks.get(chunk_key, {}).keys()
 	if keys.is_empty():
 		return
@@ -801,16 +838,18 @@ func _rebuild_chunk(chunk_key: String) -> void:
 
 
 func _append_face(face_groups: Dictionary, id: String, face: int, pos: Vector3i) -> void:
-	var group_key := "%s_%d" % [id, face]
+	var block: Dictionary = blocks[id]
+	var single_material := bool(block.get("singleMaterial", false))
+	var group_key := id if single_material else "%s_%d" % [id, face]
 	if not face_groups.has(group_key):
-		var block: Dictionary = blocks[id]
 		var materials: Array = block["materials"]
+		var material_index := 0 if single_material else face
 		face_groups[group_key] = {
 			"vertices": PackedVector3Array(),
 			"normals": PackedVector3Array(),
 			"uvs": PackedVector2Array(),
 			"indices": PackedInt32Array(),
-			"material": materials[face],
+			"material": materials[material_index],
 			"face_count": 0
 		}
 
@@ -1241,8 +1280,8 @@ func _new_world_from_menu() -> void:
 	player_inventory.clear()
 	health = MAX_HEALTH
 	_generate_world()
-	_rebuild_meshes()
 	_spawn_player()
+	_rebuild_meshes()
 	_play_sfx("menu")
 	_update_hud()
 
@@ -1407,6 +1446,14 @@ func _get_block_at_point(point: Vector3) -> String:
 
 func _block_key(x: int, y: int, z: int) -> String:
 	return "%d,%d,%d" % [x, y, z]
+
+
+func _chunk_key_from_coords(cx: int, cz: int) -> String:
+	return "%d,%d" % [cx, cz]
+
+
+func _chunk_coords_for_world_position(pos: Vector3) -> Vector2i:
+	return Vector2i(floori(pos.x / float(CHUNK_SIZE)), floori(pos.z / float(CHUNK_SIZE)))
 
 
 func _parse_key(key: String) -> Vector3i:

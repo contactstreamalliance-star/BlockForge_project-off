@@ -9,6 +9,11 @@ func setup(texture_loader) -> void:
 
 func create_block_materials(block: Dictionary) -> Array:
 	var texture_paths: Dictionary = block.get("textures", {})
+	if texture_paths.has("all"):
+		var transparent := bool(block.get("transparent", false)) or bool(block.get("liquid", false))
+		var alpha: float = 0.6 if bool(block.get("liquid", false)) else 0.72 if bool(block.get("transparent", false)) else 1.0
+		var mat := _make_material(String(texture_paths.get("all", "")), Color(0.92, 0.92, 0.92, alpha), transparent)
+		return [mat, mat, mat, mat, mat, mat]
 	var side_path: String = String(texture_paths.get("side", texture_paths.get("all", "")))
 	var top_path: String = String(texture_paths.get("top", texture_paths.get("all", side_path)))
 	var bottom_path: String = String(texture_paths.get("bottom", texture_paths.get("all", side_path)))

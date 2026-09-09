@@ -1,6 +1,24 @@
 {
   "updates": [
     {
+      "version": "0.3.1-godot",
+      "title": "Grosse optimisation du rendu",
+      "date": "2026-09-10",
+      "description": "Réduction importante des lags en gardant le monde complet, mais en ne rendant que les chunks proches du joueur.",
+      "added": [
+        "Paramètre renderDistanceChunks dans assets/worldgen.json pour régler la distance de rendu."
+      ],
+      "changed": [
+        "Le jeu charge et décharge les meshes de chunks autour du joueur au lieu de rendre toute la carte en permanence.",
+        "Le lancement et la génération d'un nouveau monde construisent seulement les chunks proches du point d'apparition.",
+        "Les blocs à texture unique partagent un matériau et fusionnent davantage leurs faces dans les chunks.",
+        "Le HUD évite les réécritures de texte inutiles quand les valeurs affichées ne changent pas."
+      ],
+      "removed": [
+        "Rendu permanent des chunks éloignés, qui coûtait trop cher pour une grande carte."
+      ]
+    },
+    {
       "version": "0.3.0-godot",
       "title": "Survie, craft et monde plus grand",
       "date": "2026-09-10",
