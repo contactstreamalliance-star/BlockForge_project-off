@@ -1,0 +1,103 @@
+{
+  "updates": [
+    {
+      "version": "0.2.4-godot",
+      "title": "Code séparé pour contributions",
+      "date": "2026-09-07",
+      "description": "Refactor du projet pour faciliter la lecture, les modifications et les futures mises à jour open source.",
+      "added": [
+        "Dossier scripts/ui pour les interfaces séparées.",
+        "Dossier scripts/systems pour les systèmes transversaux comme l'audio.",
+        "Dossier scripts/utils pour les petits outils réutilisables.",
+        "Dossier scripts/world pour le rendu et les helpers du monde voxel.",
+        "Module PatchNotesPanel dédié à l'écran des mises à jour.",
+        "Module AudioLibrary dédié aux sons et à la musique.",
+        "Module TextureCache dédié au chargement des PNG.",
+        "Module BlockMaterialFactory dédié aux matériaux des blocs.",
+        "Module SelectionOutline dédié au contour de bloc ciblé.",
+        "Documentation docs/ARCHITECTURE.md pour expliquer où modifier quoi."
+      ],
+      "changed": [
+        "main.gd devient davantage un fichier d'orchestration au lieu de contenir toute la logique.",
+        "La création des matériaux de blocs est sortie du fichier principal.",
+        "L'écran Patch Notes est sorti du fichier principal."
+      ],
+      "removed": [
+        "Anciennes fonctions internes inutilisées de création de nuages et de contour de sélection."
+      ]
+    },
+    {
+      "version": "0.2.3-godot",
+      "title": "Patch Notes en jeu",
+      "date": "2026-09-07",
+      "description": "Ajout d'un écran de mises à jour lisible depuis le menu principal et depuis le menu pause.",
+      "added": [
+        "Bouton Patch Notes dans le menu principal.",
+        "Bouton Patch Notes accessible après avoir appuyé sur Échap.",
+        "Fichier assets/patch_notes.json modifiable sans recompresser le jeu.",
+        "Affichage des versions de la plus récente en haut à la plus ancienne en bas."
+      ],
+      "changed": [
+        "Le menu principal accueille maintenant plus d'actions sans déborder."
+      ],
+      "removed": []
+    },
+    {
+      "version": "0.2.2-godot",
+      "title": "Optimisation du monde voxel",
+      "date": "2026-09-07",
+      "description": "Première passe sérieuse de performance pour rendre le cassage et la pose de blocs plus fluides.",
+      "added": [
+        "Découpage du monde en morceaux de 16 x 16 blocs.",
+        "Reconstruction locale des morceaux proches quand un bloc change.",
+        "Cache de textures PNG pour éviter de relire les mêmes images plusieurs fois."
+      ],
+      "changed": [
+        "Le HUD ne se met plus à jour à chaque image physique.",
+        "Les ombres des blocs restent désactivées pour garder une pré-alpha plus fluide."
+      ],
+      "removed": []
+    },
+    {
+      "version": "0.2.1-godot",
+      "title": "Stabilisation visuelle du spawn",
+      "date": "2026-09-07",
+      "description": "Correction du départ de partie pour éviter l'effet de monde coupé ou cassé.",
+      "added": [
+        "Mode de terrain showcase_flat pour obtenir un départ stable et propre.",
+        "Lanceur JOUER.bat dans le dossier du projet."
+      ],
+      "changed": [
+        "Le seed par défaut est fixe pour faciliter les tests.",
+        "Le spawn est une clairière plate et large.",
+        "Les faces des blocs ne disparaissent plus selon l'angle de vue.",
+        "Les arbres sont éloignés de la zone de départ."
+      ],
+      "removed": [
+        "Nuages temporaires en bandes, retirés car ils donnaient un rendu cassé."
+      ]
+    },
+    {
+      "version": "0.2.0-godot",
+      "title": "Pré-alpha desktop Godot",
+      "date": "2026-09-07",
+      "description": "Première version native Godot du projet, pensée pour remplacer le prototype navigateur.",
+      "added": [
+        "Projet Godot desktop jouable localement.",
+        "Monde voxel procédural.",
+        "Cassage et pose de blocs.",
+        "Textures PNG et sons WAV modifiables.",
+        "Musiques et sons chiptune.",
+        "Fichiers communautaires recommandés pour GitHub."
+      ],
+      "changed": [
+        "Rendu en faces visibles au lieu de cubes complets.",
+        "Textures simplifiées et moins bruitées.",
+        "Brouillard et eau réduits pour limiter les bugs visuels."
+      ],
+      "removed": [
+        "Prototype navigateur comme version principale."
+      ]
+    }
+  ]
+}
