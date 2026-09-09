@@ -3,6 +3,7 @@ extends Node3D
 const BLOCKS_PATH := "res://assets/blocks.json"
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
+const VERSION_LABEL := "0.3.0"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -18,10 +19,16 @@ const FACE_FORWARD := 4
 const FACE_BACK := 5
 const CHUNK_SIZE := 16
 const HUD_REFRESH_TIME := 0.15
+const MODE_SURVIVAL := "survival"
+const MODE_CREATIVE := "creative"
+const MAX_HEALTH := 20
+const FALL_SAFE_HEIGHT := 4.0
 
 const AudioLibraryScript := preload("res://scripts/systems/audio_library.gd")
 const BlockMaterialFactoryScript := preload("res://scripts/world/block_material_factory.gd")
+const CraftingBookScript := preload("res://scripts/systems/crafting_book.gd")
 const PatchNotesControllerScript := preload("res://scripts/ui/patch_notes_controller.gd")
+const PlayerInventoryScript := preload("res://scripts/systems/player_inventory.gd")
 const SelectionOutlineScript := preload("res://scripts/world/selection_outline.gd")
 const TextureCacheScript := preload("res://scripts/utils/texture_cache.gd")
 const VoxelMathScript := preload("res://scripts/world/voxel_math.gd")
@@ -33,14 +40,24 @@ var hud_layer: CanvasLayer
 var patch_notes_controller
 var status_label: Label
 var debug_label: Label
+var health_label: Label
 var hotbar_box: HBoxContainer
+var inventory_layer: CanvasLayer
+var inventory_panel: PanelContainer
+var inventory_list: VBoxContainer
+var recipes_list: VBoxContainer
+var game_over_layer: CanvasLayer
 var crosshair: Control
 var selected_outline: MeshInstance3D
 var audio_library
 var block_material_factory
 var texture_loader
+var player_inventory
+var crafting_book
+var dropped_items_parent: Node3D
 
 var blocks := {}
+var placeable_blocks := []
 var hotbar := []
 var world := {}
 var chunk_blocks := {}
@@ -54,6 +71,10 @@ var block_count := 0
 var velocity := Vector3.ZERO
 var grounded := false
 var game_active := false
+var game_mode := MODE_SURVIVAL
+var health := MAX_HEALTH
+var fall_start_y := 0.0
+var was_grounded := false
 var retro_fog := false
 var message := "Clique sur Jouer pour commencer."
 var step_timer := 0.0
@@ -65,10 +86,14 @@ func _ready() -> void:
 	texture_loader = TextureCacheScript.new()
 	block_material_factory = BlockMaterialFactoryScript.new()
 	block_material_factory.setup(texture_loader)
+	player_inventory = PlayerInventoryScript.new()
+	crafting_book = CraftingBookScript.new()
+	crafting_book.load_recipes()
 	_load_game_data()
 	_setup_rendering()
 	_setup_audio()
 	_setup_ui()
+	_setup_world_nodes()
 	_generate_world()
 	_rebuild_meshes()
 	_spawn_player()
@@ -78,7 +103,10 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not game_active:
 		return
+	was_grounded = grounded
 	_update_movement(delta)
+	_update_fall_damage()
+	_update_dropped_items(delta)
 	_update_target()
 	hud_timer -= delta
 	if hud_timer <= 0.0:
@@ -120,12 +148,15 @@ func _load_game_data() -> void:
 	worldgen = world_data
 	world_seed = int(worldgen.get("seed", 1))
 	hotbar = block_data.get("hotbar", [])
+	placeable_blocks.clear()
 
 	for block in block_data.get("blocks", []):
 		var id := String(block.get("id", ""))
 		if id == "":
 			continue
-		block["materials"] = block_material_factory.create_block_materials(block)
+		if bool(block.get("placeable", true)):
+			block["materials"] = block_material_factory.create_block_materials(block)
+			placeable_blocks.append(id)
 		blocks[id] = block
 
 
@@ -192,6 +223,12 @@ func _setup_audio() -> void:
 	audio_library.setup(["break", "place", "jump", "menu", "step", "music"])
 
 
+func _setup_world_nodes() -> void:
+	dropped_items_parent = Node3D.new()
+	dropped_items_parent.name = "DroppedItems"
+	add_child(dropped_items_parent)
+
+
 func _setup_ui() -> void:
 	title_layer = CanvasLayer.new()
 	title_layer.name = "TitleLayer"
@@ -227,7 +264,7 @@ func _setup_ui() -> void:
 	panel.add_child(box)
 
 	var build := Label.new()
-	build.text = "PRE-ALPHA DESKTOP 0.2.6"
+	build.text = "PRE-ALPHA DESKTOP " + VERSION_LABEL
 	build.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(build)
 
@@ -247,11 +284,17 @@ func _setup_ui() -> void:
 	actions.add_theme_constant_override("separation", 12)
 	box.add_child(actions)
 
-	var play_button := Button.new()
-	play_button.text = "Jouer"
-	play_button.custom_minimum_size = Vector2(210, 44)
-	play_button.pressed.connect(_start_game)
-	actions.add_child(play_button)
+	var survival_button := Button.new()
+	survival_button.text = "Survie"
+	survival_button.custom_minimum_size = Vector2(210, 44)
+	survival_button.pressed.connect(_start_survival)
+	actions.add_child(survival_button)
+
+	var creative_button := Button.new()
+	creative_button.text = "Créatif"
+	creative_button.custom_minimum_size = Vector2(210, 44)
+	creative_button.pressed.connect(_start_creative)
+	actions.add_child(creative_button)
 
 	var new_world_button := Button.new()
 	new_world_button.text = "Nouveau monde"
@@ -301,6 +344,21 @@ func _setup_ui() -> void:
 	debug_label.add_theme_constant_override("shadow_offset_y", 2)
 	hud_layer.add_child(debug_label)
 
+	health_label = Label.new()
+	health_label.anchor_left = 0.0
+	health_label.anchor_right = 0.0
+	health_label.anchor_top = 1.0
+	health_label.anchor_bottom = 1.0
+	health_label.offset_left = 14.0
+	health_label.offset_top = -64.0
+	health_label.offset_right = 360.0
+	health_label.offset_bottom = -20.0
+	health_label.add_theme_color_override("font_color", Color(1.0, 0.34, 0.34))
+	health_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	health_label.add_theme_constant_override("shadow_offset_x", 2)
+	health_label.add_theme_constant_override("shadow_offset_y", 2)
+	hud_layer.add_child(health_label)
+
 	crosshair = Control.new()
 	crosshair.set_anchors_preset(Control.PRESET_CENTER)
 	hud_layer.add_child(crosshair)
@@ -320,6 +378,8 @@ func _setup_ui() -> void:
 	hotbar_box.add_theme_constant_override("separation", 4)
 	hud_layer.add_child(hotbar_box)
 	_rebuild_hotbar()
+	_setup_inventory_ui()
+	_setup_game_over_ui()
 	_setup_patch_notes_ui()
 
 
@@ -339,6 +399,158 @@ func _setup_patch_notes_ui() -> void:
 	patch_notes_controller.setup()
 
 
+func _setup_inventory_ui() -> void:
+	inventory_layer = CanvasLayer.new()
+	inventory_layer.name = "InventoryLayer"
+	inventory_layer.visible = false
+	add_child(inventory_layer)
+
+	var root := CenterContainer.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inventory_layer.add_child(root)
+
+	inventory_panel = PanelContainer.new()
+	inventory_panel.custom_minimum_size = Vector2(700, 480)
+	root.add_child(inventory_panel)
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 18)
+	inventory_panel.add_child(columns)
+
+	var inventory_column := VBoxContainer.new()
+	inventory_column.custom_minimum_size = Vector2(320, 430)
+	columns.add_child(inventory_column)
+
+	var inventory_title := Label.new()
+	inventory_title.text = "Inventaire"
+	inventory_title.add_theme_font_size_override("font_size", 24)
+	inventory_column.add_child(inventory_title)
+
+	inventory_list = VBoxContainer.new()
+	inventory_list.add_theme_constant_override("separation", 6)
+	inventory_column.add_child(inventory_list)
+
+	var recipes_column := VBoxContainer.new()
+	recipes_column.custom_minimum_size = Vector2(320, 430)
+	columns.add_child(recipes_column)
+
+	var recipes_title := Label.new()
+	recipes_title.text = "Craft"
+	recipes_title.add_theme_font_size_override("font_size", 24)
+	recipes_column.add_child(recipes_title)
+
+	recipes_list = VBoxContainer.new()
+	recipes_list.add_theme_constant_override("separation", 6)
+	recipes_column.add_child(recipes_list)
+
+
+func _setup_game_over_ui() -> void:
+	game_over_layer = CanvasLayer.new()
+	game_over_layer.name = "GameOverLayer"
+	game_over_layer.visible = false
+	add_child(game_over_layer)
+
+	var shade := ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.02, 0.0, 0.0, 0.72)
+	game_over_layer.add_child(shade)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	game_over_layer.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(520, 280)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 18)
+	panel.add_child(box)
+
+	var title := Label.new()
+	title.text = "Game Over"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 44)
+	box.add_child(title)
+
+	var info := Label.new()
+	info.text = "Tu peux réapparaître. Ton inventaire est tombé au sol."
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(info)
+
+	var respawn := Button.new()
+	respawn.text = "Réapparaître"
+	respawn.custom_minimum_size = Vector2(220, 46)
+	respawn.pressed.connect(_respawn_after_death)
+	box.add_child(respawn)
+
+
+func _toggle_inventory() -> void:
+	if not game_active:
+		return
+	inventory_layer.visible = not inventory_layer.visible
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if inventory_layer.visible else Input.MOUSE_MODE_CAPTURED)
+	if inventory_layer.visible:
+		_refresh_inventory_ui()
+
+
+func _refresh_inventory_ui() -> void:
+	for child in inventory_list.get_children():
+		child.queue_free()
+	for child in recipes_list.get_children():
+		child.queue_free()
+
+	var item_ids: Array = player_inventory.copy_items().keys()
+	item_ids.sort()
+	if item_ids.is_empty():
+		var empty := Label.new()
+		empty.text = "Vide"
+		inventory_list.add_child(empty)
+	else:
+		for id in item_ids:
+			var label := Label.new()
+			label.text = "%s x%d" % [_block_name(String(id)), player_inventory.count(String(id))]
+			inventory_list.add_child(label)
+
+	for recipe in crafting_book.get_recipes():
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var button := Button.new()
+		button.text = "Fabriquer"
+		button.disabled = not crafting_book.can_craft(recipe, player_inventory)
+		button.pressed.connect(_craft_recipe.bind(recipe))
+		row.add_child(button)
+		var text := Label.new()
+		text.text = "%s  (%s -> %s)" % [
+			String(recipe.get("name", recipe.get("id", "Recette"))),
+			_format_item_map(recipe.get("input", {})),
+			_format_item_map(recipe.get("output", {}))
+		]
+		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		text.custom_minimum_size = Vector2(220, 0)
+		row.add_child(text)
+		recipes_list.add_child(row)
+
+
+func _craft_recipe(recipe: Dictionary) -> void:
+	if crafting_book.craft(recipe, player_inventory):
+		message = "Craft réussi: %s." % String(recipe.get("name", recipe.get("id", "recette")))
+	else:
+		message = "Il manque des matériaux."
+	_refresh_inventory_ui()
+	_rebuild_hotbar()
+	_update_hud()
+
+
+func _format_item_map(items: Dictionary) -> String:
+	var parts := []
+	for id in items.keys():
+		parts.append("%s x%d" % [_block_name(String(id)), int(items[id])])
+	return ", ".join(parts)
+
+
 func _load_png_texture(path: String) -> Texture2D:
 	return texture_loader.load_png(path) as Texture2D
 
@@ -351,6 +563,7 @@ func _generate_world() -> void:
 		world_seed += randi_range(0, 999999)
 	var size := int(worldgen.get("size", 44))
 	var half: int = int(size / 2)
+	var min_y := int(worldgen.get("minHeight", -16))
 	var water_level := int(worldgen.get("waterLevel", 8))
 	var water_enabled := bool(worldgen.get("waterEnabled", false))
 	var tree_spots := []
@@ -358,21 +571,17 @@ func _generate_world() -> void:
 	for x in range(-half, half + 1):
 		for z in range(-half, half + 1):
 			var height := _terrain_height(x, z)
-			for y in range(0, height + 1):
-				var id := "stone"
-				if y == height:
-					id = "sand" if height <= water_level + 1 else "grass"
-				elif y > height - 4:
-					id = "sand" if height <= water_level + 1 else "dirt"
-				elif VoxelMathScript.hash3(x, y, z, world_seed) < float(worldgen.get("oreChance", 0.016)):
-					id = "cobble"
+			for y in range(min_y, height + 1):
+				if _is_cave_air(x, y, z, height):
+					continue
+				var id := _natural_block_id(x, y, z, height, water_level)
 				_set_block(x, y, z, id)
 
 			if water_enabled and height < water_level:
 				for y in range(height + 1, water_level + 1):
 					_set_block(x, y, z, "water")
 
-			if height > water_level + 2 and (abs(x) > 20 or abs(z) > 20) and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < float(worldgen.get("treeChance", 0.006)):
+			if height > water_level + 2 and (abs(x) > 8 or abs(z) > 8) and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < float(worldgen.get("treeChance", 0.006)):
 				tree_spots.append(Vector3i(x, height + 1, z))
 
 	for spot in tree_spots:
@@ -391,13 +600,57 @@ func _terrain_height(x: int, z: int) -> int:
 	if String(worldgen.get("terrainMode", "")) == "showcase_flat":
 		return plateau_height
 	var dist: int = maxi(abs(x), abs(z))
+	var hill_strength := float(worldgen.get("hillStrength", 7.0))
+	var mountain_strength := float(worldgen.get("mountainStrength", 16.0))
+	var broad: float = VoxelMathScript.value_noise(x * 0.026, z * 0.026, world_seed)
+	var hills: float = VoxelMathScript.value_noise(x * 0.075 + 90.0, z * 0.075 - 27.0, world_seed)
+	var detail: float = VoxelMathScript.value_noise(x * 0.18 - 18.0, z * 0.18 + 44.0, world_seed) - 0.5
+	var mountains: float = pow(maxf(0.0, broad - 0.56), 1.55) * mountain_strength
+	var natural: float = float(water_level + 5) + (hills - 0.48) * hill_strength + detail * 3.0 + mountains
 	if dist <= plateau_radius:
 		return plateau_height
-	var n: float = VoxelMathScript.value_noise(x * 0.07, z * 0.07, world_seed)
-	n += VoxelMathScript.value_noise(x * 0.16 + 80.0, z * 0.16 - 31.0, world_seed) * 0.45
-	var natural: float = float(plateau_height) + n * 3.0 - 1.0
-	var blend: float = clampf(float(dist - plateau_radius) / 6.0, 0.0, 1.0)
-	return clampi(roundi(lerpf(float(plateau_height), natural, blend)), 2, max_height)
+	var blend: float = clampf(float(dist - plateau_radius) / 10.0, 0.0, 1.0)
+	return clampi(roundi(lerpf(float(plateau_height), natural, blend)), 3, max_height)
+
+
+func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) -> String:
+	if y == height:
+		if height <= water_level + 1:
+			return "sand" if VoxelMathScript.hash2(x, z, world_seed + 41) > 0.18 else "clay"
+		return "grass"
+	if y > height - 4:
+		if height <= water_level + 2:
+			return "sand" if VoxelMathScript.hash3(x, y, z, world_seed + 82) > 0.18 else "clay"
+		return "dirt"
+	var ore := _ore_block_id(x, y, z)
+	if ore != "":
+		return ore
+	if y < int(worldgen.get("minHeight", -16)) + 7 and VoxelMathScript.hash3(x, y, z, world_seed + 17) < 0.34:
+		return "granite"
+	if VoxelMathScript.hash3(x, y, z, world_seed + 99) < 0.018:
+		return "marble"
+	return "stone"
+
+
+func _ore_block_id(x: int, y: int, z: int) -> String:
+	var chance := float(worldgen.get("oreChance", 0.016))
+	var roll := VoxelMathScript.hash3(x, y, z, world_seed + 301)
+	if y < 8 and roll < chance * 0.45:
+		return "iron_ore"
+	if y < 24 and roll < chance:
+		return "coal_ore"
+	return ""
+
+
+func _is_cave_air(x: int, y: int, z: int, surface_y: int) -> bool:
+	var min_y := int(worldgen.get("minHeight", -16))
+	if y <= min_y + 2 or y >= surface_y - 4:
+		return false
+	var cave_chance := float(worldgen.get("caveChance", 0.14))
+	var tunnel := VoxelMathScript.value_noise(x * 0.095 + 7.0, z * 0.095 - 11.0, world_seed + y * 13)
+	var pocket := VoxelMathScript.value_noise((x + y) * 0.055, (z - y) * 0.055, world_seed + 511)
+	var depth_bonus := clampf(float(surface_y - y) / 38.0, 0.0, 0.18)
+	return tunnel > 0.72 - cave_chance * 0.15 or pocket > 0.82 - depth_bonus
 
 
 func _add_showcase_details() -> void:
@@ -435,6 +688,7 @@ func _grow_tree(x: int, y: int, z: int) -> void:
 
 func _clear_spawn_area() -> void:
 	var water_level := int(worldgen.get("waterLevel", 6))
+	var min_y := int(worldgen.get("minHeight", -16))
 	var max_y := int(worldgen.get("maxHeight", 20)) + 12
 	var radius := int(worldgen.get("spawnPlateauRadius", 13))
 	var plateau_height := int(worldgen.get("spawnPlateauHeight", water_level + 4))
@@ -442,7 +696,7 @@ func _clear_spawn_area() -> void:
 		for z in range(-radius, radius + 1):
 			var ground_y := _highest_ground_y(x, z)
 			if maxi(abs(x), abs(z)) <= radius:
-				for y in range(0, max_y + 1):
+				for y in range(min_y, max_y + 1):
 					if y < plateau_height - 3:
 						_set_block(x, y, z, "stone")
 					elif y < plateau_height:
@@ -614,6 +868,9 @@ func _spawn_player() -> void:
 	camera.position = spawn
 	camera.rotation = Vector3(-0.04, -0.65, 0.0)
 	velocity = Vector3.ZERO
+	grounded = false
+	was_grounded = false
+	fall_start_y = camera.position.y
 
 
 func _find_spawn_position() -> Vector3:
@@ -646,15 +903,15 @@ func _find_spawn_position() -> Vector3:
 
 
 func _highest_ground_y(x: int, z: int) -> int:
-	for y in range(int(worldgen.get("maxHeight", 24)) + 16, -3, -1):
+	for y in range(int(worldgen.get("maxHeight", 24)) + 16, int(worldgen.get("minHeight", -16)) - 2, -1):
 		var id := _get_block(x, y, z)
-		if id == "grass" or id == "sand" or id == "dirt" or id == "stone":
+		if id == "grass" or id == "sand" or id == "dirt" or id == "stone" or id == "clay" or id == "granite":
 			return y
 	return int(worldgen.get("waterLevel", 8)) + 4
 
 
 func _highest_solid_y(x: int, z: int) -> int:
-	for y in range(int(worldgen.get("maxHeight", 24)) + 16, -3, -1):
+	for y in range(int(worldgen.get("maxHeight", 24)) + 16, int(worldgen.get("minHeight", -16)) - 2, -1):
 		var id := _get_block(x, y, z)
 		if bool(blocks.get(id, {}).get("solid", false)):
 			return y
@@ -701,6 +958,119 @@ func _move_player(delta: Vector3) -> void:
 				velocity.y = 0
 			else:
 				velocity[axis] = 0
+
+
+func _update_fall_damage() -> void:
+	if game_mode != MODE_SURVIVAL:
+		return
+	if was_grounded and not grounded:
+		fall_start_y = camera.position.y
+	if not was_grounded and grounded:
+		var fallen := fall_start_y - camera.position.y
+		if fallen > FALL_SAFE_HEIGHT:
+			var damage := int(ceil((fallen - FALL_SAFE_HEIGHT) * 2.0))
+			_apply_damage(damage, "chute")
+
+
+func _apply_damage(amount: int, reason: String) -> void:
+	if game_mode != MODE_SURVIVAL or amount <= 0 or game_over_layer.visible:
+		return
+	health = max(0, health - amount)
+	message = "Dégâts de %s: -%d." % [reason, amount]
+	_play_sfx("break")
+	if health <= 0:
+		_die()
+	_update_hud()
+
+
+func _die() -> void:
+	game_active = false
+	_drop_inventory_on_death()
+	player_inventory.clear()
+	_refresh_inventory_ui()
+	_update_hud()
+	game_over_layer.visible = true
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+
+
+func _respawn_after_death() -> void:
+	health = MAX_HEALTH
+	game_over_layer.visible = false
+	_spawn_player()
+	game_active = true
+	message = "Réapparition. Tes objets sont encore au sol."
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	_update_hud()
+
+
+func _drop_inventory_on_death() -> void:
+	var origin := camera.position - Vector3(0, EYE_HEIGHT - 0.5, 0)
+	var index := 0
+	for id in player_inventory.copy_items().keys():
+		var amount: int = player_inventory.count(String(id))
+		if amount <= 0:
+			continue
+		var angle := float(index) * 0.83
+		var offset := Vector3(cos(angle), 0.0, sin(angle)) * (0.7 + float(index % 3) * 0.25)
+		_spawn_item_drop(String(id), amount, origin + offset)
+		index += 1
+
+
+func _spawn_item_drop(id: String, amount: int, position: Vector3) -> void:
+	if amount <= 0:
+		return
+	var item := MeshInstance3D.new()
+	item.name = "Drop_%s_%d" % [id, amount]
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.32, 0.32, 0.32)
+	item.mesh = mesh
+	item.position = position
+	item.set_meta("item_id", id)
+	item.set_meta("amount", amount)
+	item.set_meta("base_y", position.y)
+	item.set_meta("phase", randf() * TAU)
+	item.material_override = _item_drop_material(id)
+	dropped_items_parent.add_child(item)
+
+
+func _item_drop_material(id: String) -> Material:
+	var block: Dictionary = blocks.get(id, {})
+	if block.has("materials"):
+		var materials: Array = block["materials"]
+		return materials[FACE_UP]
+	var mat := StandardMaterial3D.new()
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mat.roughness = 1.0
+	mat.albedo_color = Color(0.12, 0.1, 0.08) if id == "coal" else Color(0.86, 0.48, 0.27)
+	return mat
+
+
+func _update_dropped_items(delta: float) -> void:
+	if dropped_items_parent == null:
+		return
+	for item in dropped_items_parent.get_children():
+		if not is_instance_valid(item):
+			continue
+		item.rotation_degrees.y += delta * 80.0
+		var base_y := float(item.get_meta("base_y", item.position.y))
+		var phase := float(item.get_meta("phase", 0.0))
+		item.position.y = base_y + sin(Time.get_ticks_msec() * 0.004 + phase) * 0.08
+		if item.global_position.distance_to(camera.global_position) < 1.45:
+			var id := String(item.get_meta("item_id", ""))
+			var amount := int(item.get_meta("amount", 1))
+			player_inventory.add_item(id, amount)
+			message = "Ramassé: %s x%d." % [_block_name(id), amount]
+			item.queue_free()
+			_refresh_inventory_if_open()
+			_rebuild_hotbar()
+			_update_hud()
+
+
+func _clear_dropped_items() -> void:
+	if dropped_items_parent == null:
+		return
+	for item in dropped_items_parent.get_children():
+		item.queue_free()
 
 
 func _can_occupy(pos: Vector3) -> bool:
@@ -765,25 +1135,40 @@ func _break_target() -> void:
 		return
 	var pos: Vector3i = selected_target["pos"]
 	var id: String = selected_target["id"]
+	var drop_id := String(blocks.get(id, {}).get("drops", id))
 	_set_block(pos.x, pos.y, pos.z, "")
+	if game_mode == MODE_SURVIVAL:
+		player_inventory.add_item(drop_id, 1)
+		_rebuild_hotbar()
 	_play_sfx("break")
-	message = "%s cassé." % String(blocks.get(id, {}).get("name", id))
+	message = "%s récupéré." % _block_name(drop_id)
 	_rebuild_nearby_chunks(pos)
+	_refresh_inventory_if_open()
 
 
 func _place_target() -> void:
 	if selected_target == null:
 		message = "Vise une face de bloc pour construire."
 		return
-	var id := String(hotbar[selected_slot])
+	var id := _selected_block_id()
+	if id == "":
+		return
+	if game_mode == MODE_SURVIVAL and player_inventory.count(id) <= 0:
+		message = "Tu n'as plus de %s." % _block_name(id)
+		_update_hud()
+		return
 	var pos: Vector3i = selected_target["pos"] + selected_target["normal"]
 	if _would_intersect_player(pos):
 		message = "Impossible de poser un bloc ici."
 		return
 	_set_block(pos.x, pos.y, pos.z, id)
+	if game_mode == MODE_SURVIVAL:
+		player_inventory.remove_item(id, 1)
+		_rebuild_hotbar()
 	_play_sfx("place")
-	message = "%s posé." % String(blocks.get(id, {}).get("name", id))
+	message = "%s posé." % _block_name(id)
 	_rebuild_nearby_chunks(pos)
+	_refresh_inventory_if_open()
 
 
 func _would_intersect_player(block_pos: Vector3i) -> bool:
@@ -792,18 +1177,33 @@ func _would_intersect_player(block_pos: Vector3i) -> bool:
 	return absf(p.x - block_pos.x) < PLAYER_RADIUS + 0.55 and absf(p.z - block_pos.z) < PLAYER_RADIUS + 0.55 and foot_y < block_pos.y + 0.5 and foot_y + PLAYER_HEIGHT > block_pos.y - 0.5
 
 
-func _start_game() -> void:
+func _start_survival() -> void:
+	_start_game(MODE_SURVIVAL)
+
+
+func _start_creative() -> void:
+	_start_game(MODE_CREATIVE)
+
+
+func _start_game(mode: String = MODE_SURVIVAL) -> void:
+	game_mode = mode
+	health = MAX_HEALTH
 	game_active = true
 	title_layer.visible = false
+	game_over_layer.visible = false
+	inventory_layer.visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_play_sfx("menu")
 	audio_library.play_music()
-	message = "Bienvenue dans la pré-alpha desktop."
+	message = "Mode survie lancé." if game_mode == MODE_SURVIVAL else "Mode créatif lancé."
+	_rebuild_hotbar()
+	_update_hud()
 
 
 func _pause_game() -> void:
 	game_active = false
 	title_layer.visible = true
+	inventory_layer.visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	message = "Pause."
 
@@ -825,6 +1225,9 @@ func _on_patch_notes_closed() -> void:
 
 
 func _new_world_from_menu() -> void:
+	_clear_dropped_items()
+	player_inventory.clear()
+	health = MAX_HEALTH
 	_generate_world()
 	_rebuild_meshes()
 	_spawn_player()
@@ -836,8 +1239,14 @@ func _handle_key(keycode: int) -> void:
 	if keycode == KEY_ESCAPE and patch_notes_controller != null and patch_notes_controller.is_open():
 		_hide_patch_notes()
 		return
+	if keycode == KEY_ESCAPE and inventory_layer != null and inventory_layer.visible:
+		_toggle_inventory()
+		return
 	if keycode == KEY_ESCAPE and game_active:
 		_pause_game()
+		return
+	if keycode == KEY_E or keycode == KEY_I:
+		_toggle_inventory()
 		return
 	if keycode >= KEY_1 and keycode <= KEY_9:
 		_select_slot(keycode - KEY_1)
@@ -865,6 +1274,26 @@ func _select_slot(index: int) -> void:
 	_rebuild_hotbar()
 
 
+func _selected_block_id() -> String:
+	if hotbar.is_empty() or selected_slot >= hotbar.size():
+		return ""
+	var id := String(hotbar[selected_slot])
+	if not bool(blocks.get(id, {}).get("placeable", true)):
+		message = "%s ne se pose pas comme bloc." % _block_name(id)
+		_update_hud()
+		return ""
+	return id
+
+
+func _block_name(id: String) -> String:
+	return String(blocks.get(id, {}).get("name", id))
+
+
+func _refresh_inventory_if_open() -> void:
+	if inventory_layer != null and inventory_layer.visible:
+		_refresh_inventory_ui()
+
+
 func _rebuild_hotbar() -> void:
 	for child in hotbar_box.get_children():
 		child.queue_free()
@@ -874,7 +1303,10 @@ func _rebuild_hotbar() -> void:
 		var slot := PanelContainer.new()
 		slot.custom_minimum_size = Vector2(50, 50)
 		var label := Label.new()
-		label.text = "%d\n%s" % [i + 1, String(block.get("name", id)).left(6)]
+		var count_text := ""
+		if game_mode == MODE_SURVIVAL:
+			count_text = " x%d" % player_inventory.count(id)
+		label.text = "%d\n%s%s" % [i + 1, String(block.get("name", id)).left(6), count_text]
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		if i == selected_slot:
@@ -887,8 +1319,20 @@ func _update_hud() -> void:
 	var block_name := "?"
 	if selected_slot < hotbar.size():
 		block_name = String(blocks.get(String(hotbar[selected_slot]), {}).get("name", hotbar[selected_slot]))
-	status_label.text = "%s\nBloc: %s\nZQSD/WASD marcher | clic gauche/droit casser/poser | 1-9 blocs" % [message, block_name]
-	debug_label.text = "BlockForge 0.2.6\nx %.1f y %.1f z %.1f\nseed %d\nfaces visibles %d\n%s" % [camera.position.x, camera.position.y, camera.position.z, world_seed, block_count, "brume douce" if retro_fog else "vue nette"]
+	status_label.text = "%s\nMode: %s | Bloc: %s\nZQSD/WASD marcher | clic gauche/droit casser/poser | E inventaire/craft | 1-9 blocs" % [
+		message,
+		"Survie" if game_mode == MODE_SURVIVAL else "Créatif",
+		block_name
+	]
+	health_label.visible = game_mode == MODE_SURVIVAL
+	health_label.text = "Vie: %s" % _health_bar_text()
+	debug_label.text = "BlockForge %s\nx %.1f y %.1f z %.1f\nseed %d\nfaces visibles %d\n%s" % [VERSION_LABEL, camera.position.x, camera.position.y, camera.position.z, world_seed, block_count, "brume douce" if retro_fog else "vue nette"]
+
+
+func _health_bar_text() -> String:
+	var full := int(ceil(float(health) / 2.0))
+	var empty := 10 - full
+	return "%s%s %d/%d" % ["♥".repeat(full), "♡".repeat(empty), health, MAX_HEALTH]
 
 
 func _play_sfx(id: String) -> void:

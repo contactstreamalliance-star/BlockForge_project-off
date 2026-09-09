@@ -1,15 +1,42 @@
 {
   "updates": [
     {
+      "version": "0.3.0-godot",
+      "title": "Survie, craft et monde plus grand",
+      "date": "2026-09-10",
+      "description": "Début de l'alpha 0.3.0 avec une carte plus vaste, une vraie base de survie et des systèmes modifiables par fichiers.",
+      "added": [
+        "Menu principal avec choix Survie ou Créatif.",
+        "Grande génération procédurale avec collines, montagnes, profondeur négative et grottes.",
+        "Nouveaux blocs et ressources: granite, argile, charbon, fer brut, minerais et atelier.",
+        "Inventaire joueur avec objets récupérés en survie.",
+        "Fenêtre de craft basée sur assets/recipes.json.",
+        "Barre de vie en mode survie.",
+        "Dégâts de chute à partir de 4 blocs.",
+        "Écran Game Over avec bouton de réapparition.",
+        "Objets tombés au sol après la mort, récupérables après réapparition.",
+        "Scripts séparés PlayerInventory et CraftingBook."
+      ],
+      "changed": [
+        "Le monde par défaut passe en terrain alpha_terrain au lieu du terrain de démonstration plat.",
+        "Le cassage de blocs ajoute les ressources à l'inventaire en survie.",
+        "La pose de blocs consomme les ressources en survie et reste illimitée en créatif.",
+        "Le HUD affiche le mode actuel et le raccourci d'inventaire/craft."
+      ],
+      "removed": [
+        "La carte plate de démonstration comme génération principale."
+      ]
+    },
+    {
       "version": "0.2.4-godot",
       "title": "Code séparé pour contributions",
       "date": "2026-09-07",
       "description": "Refactor du projet pour faciliter la lecture, les modifications et les futures mises à jour open source.",
       "added": [
-        "Dossier scripts/ui pour les interfaces séparées.",
-        "Dossier scripts/systems pour les systèmes transversaux comme l'audio.",
-        "Dossier scripts/utils pour les petits outils réutilisables.",
-        "Dossier scripts/world pour le rendu et les helpers du monde voxel.",
+        "Dossier src/ui pour les interfaces séparées.",
+        "Dossier src/systems pour les systèmes transversaux comme l'audio.",
+        "Dossier src/utils pour les petits outils réutilisables.",
+        "Dossier src/world pour le rendu et les helpers du monde voxel.",
         "Module PatchNotesPanel dédié à l'écran des mises à jour.",
         "Module AudioLibrary dédié aux sons et à la musique.",
         "Module TextureCache dédié au chargement des PNG.",

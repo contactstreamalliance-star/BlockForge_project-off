@@ -31,6 +31,44 @@
       }
     },
     {
+      "id": "granite",
+      "name": "Granite",
+      "solid": true,
+      "mineTime": 1.15,
+      "textures": {
+        "all": "res://assets/textures/blocks/granite.png"
+      }
+    },
+    {
+      "id": "clay",
+      "name": "Argile",
+      "solid": true,
+      "mineTime": 0.65,
+      "textures": {
+        "all": "res://assets/textures/blocks/clay.png"
+      }
+    },
+    {
+      "id": "coal_ore",
+      "name": "Charbon",
+      "solid": true,
+      "mineTime": 1.35,
+      "drops": "coal",
+      "textures": {
+        "all": "res://assets/textures/blocks/coal_ore.png"
+      }
+    },
+    {
+      "id": "iron_ore",
+      "name": "Fer brut",
+      "solid": true,
+      "mineTime": 1.6,
+      "drops": "raw_iron",
+      "textures": {
+        "all": "res://assets/textures/blocks/iron_ore.png"
+      }
+    },
+    {
       "id": "sand",
       "name": "Sable",
       "solid": true,
@@ -106,7 +144,30 @@
       "textures": {
         "all": "res://assets/textures/blocks/marble.png"
       }
+    },
+    {
+      "id": "workbench",
+      "name": "Atelier",
+      "solid": true,
+      "mineTime": 0.55,
+      "textures": {
+        "top": "res://assets/textures/blocks/workbench_top.png",
+        "side": "res://assets/textures/blocks/workbench_side.png",
+        "bottom": "res://assets/textures/blocks/planks.png"
+      }
+    },
+    {
+      "id": "coal",
+      "name": "Charbon",
+      "placeable": false,
+      "stackable": true
+    },
+    {
+      "id": "raw_iron",
+      "name": "Fer brut",
+      "placeable": false,
+      "stackable": true
     }
   ],
-  "hotbar": ["grass", "dirt", "stone", "sand", "log", "leaves", "planks", "cobble", "marble"]
+  "hotbar": ["grass", "dirt", "stone", "sand", "log", "planks", "cobble", "granite", "workbench"]
 }

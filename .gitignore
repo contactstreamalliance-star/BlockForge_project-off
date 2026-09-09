@@ -1,3 +1,28 @@
-# Godot 4+ specific ignores
+# Godot local/editor data
 .godot/
-/android/
+*.tmp
+*.translation
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local exports/builds
+builds/
+exports/
+*.exe
+*.pck
+*.zip
+
+# Old browser prototype leftovers, kept out of the Godot repository if present locally
+/_legacy_browser_prototype_unused/
+/index.html
+/server.cjs
+/package.json
+/styles.css
+/src/*.js
+/voxel-frontier/
+
+# Accidental duplicate documents
+* (2).md

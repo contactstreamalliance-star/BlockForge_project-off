@@ -1,0 +1,14 @@
+{
+  "blocks.grass": "Herbe",
+  "blocks.dirt": "Terre",
+  "blocks.stone": "Pierre",
+  "blocks.sand": "Sable",
+  "blocks.log": "Tronc",
+  "blocks.leaves": "Feuilles",
+  "blocks.planks": "Planches",
+  "blocks.cobble": "Pierres",
+  "blocks.glass": "Verre",
+  "blocks.water": "Eau",
+  "ui.saved": "Monde sauvegardé",
+  "ui.generated": "Nouveau monde généré"
+}

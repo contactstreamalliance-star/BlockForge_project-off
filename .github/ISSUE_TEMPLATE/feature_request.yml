@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a gameplay, engine, asset or modding feature.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Gameplay
+        - World generation
+        - Blocks and assets
+        - Modding
+        - Multiplayer
+        - Documentation

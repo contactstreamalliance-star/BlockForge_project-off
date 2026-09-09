@@ -1,0 +1,9 @@
+{
+  "id": "blockforge-alpha",
+  "name": "BlockForge Alpha",
+  "version": "0.3.0-godot",
+  "engine": "Godot 4.7.2",
+  "codeLicense": "MIT",
+  "assetLicense": "CC0-1.0",
+  "description": "Pré-alpha Godot de survie voxel, open source, locale et moddable."
+}

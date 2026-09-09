@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dy07sts58pqi5"]
 
-[ext_resource type="Script" uid="uid://5bg78nkgffff" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 
 [node name="BlockForgeAlpha" type="Node3D" unique_id=893159842]
 script = ExtResource("1_main")

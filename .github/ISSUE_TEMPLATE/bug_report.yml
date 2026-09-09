@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a bug in the desktop pre-alpha.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: OS and Godot version
+      placeholder: "Windows 11, Godot 4.7.2"

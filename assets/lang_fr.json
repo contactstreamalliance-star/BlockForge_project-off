@@ -1,0 +1,19 @@
+{
+  "ui.play": "Jouer",
+  "ui.new_world": "Nouveau monde",
+  "ui.quit": "Quitter",
+  "ui.title": "BlockForge Alpha",
+  "ui.subtitle": "Pré-alpha desktop locale, open source, moddable.",
+  "ui.help": "ZQSD/WASD: bouger | Souris: regarder | Espace: sauter | clic gauche/droit: casser/poser | 1-9: blocs | F: brouillard | R: monde",
+  "blocks.grass": "Herbe",
+  "blocks.dirt": "Terre",
+  "blocks.stone": "Pierre",
+  "blocks.sand": "Sable",
+  "blocks.log": "Tronc",
+  "blocks.leaves": "Feuilles",
+  "blocks.planks": "Planches",
+  "blocks.cobble": "Pierres",
+  "blocks.glass": "Verre",
+  "blocks.water": "Eau",
+  "blocks.marble": "Marbre"
+}

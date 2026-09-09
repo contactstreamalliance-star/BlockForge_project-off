@@ -1,13 +1,17 @@
 {
   "seed": 173419,
-  "terrainMode": "showcase_flat",
-  "size": 48,
-  "maxHeight": 18,
-  "waterLevel": 6,
-  "waterEnabled": false,
-  "treeChance": 0.003,
-  "oreChance": 0.002,
+  "terrainMode": "alpha_terrain",
+  "size": 80,
+  "minHeight": -22,
+  "maxHeight": 42,
+  "waterLevel": 7,
+  "waterEnabled": true,
+  "treeChance": 0.012,
+  "oreChance": 0.018,
+  "caveChance": 0.18,
+  "mountainStrength": 18.0,
+  "hillStrength": 7.0,
   "randomSeedOnStart": false,
-  "spawnPlateauRadius": 18,
-  "spawnPlateauHeight": 10
+  "spawnPlateauRadius": 9,
+  "spawnPlateauHeight": 13
 }

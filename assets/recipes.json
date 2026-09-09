@@ -1,0 +1,34 @@
+{
+  "recipes": [
+    {
+      "id": "planks_from_log",
+      "name": "Planches x4",
+      "input": { "log": 1 },
+      "output": { "planks": 4 }
+    },
+    {
+      "id": "workbench_from_planks",
+      "name": "Atelier",
+      "input": { "planks": 4 },
+      "output": { "workbench": 1 }
+    },
+    {
+      "id": "glass_from_sand",
+      "name": "Verre x2",
+      "input": { "sand": 2, "coal": 1 },
+      "output": { "glass": 2 }
+    },
+    {
+      "id": "marble_from_stone",
+      "name": "Marbre",
+      "input": { "stone": 2 },
+      "output": { "marble": 1 }
+    },
+    {
+      "id": "granite_from_cobble",
+      "name": "Granite",
+      "input": { "cobble": 2, "clay": 1 },
+      "output": { "granite": 2 }
+    }
+  ]
+}

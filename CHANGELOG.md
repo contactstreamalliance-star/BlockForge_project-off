@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0-godot - 2026-09-10
+
+- Added Survival and Creative mode selection from the title menu.
+- Added a larger procedural world with hills, mountains, deeper terrain and caves.
+- Added inventory, craft recipes, health, fall damage, Game Over and respawn flow.
+- Added dropped item pickups after death.
+- Added granite, clay, coal ore, iron ore, coal, raw iron and workbench data/textures.
+- Added `scripts/systems/player_inventory.gd` and `scripts/systems/crafting_book.gd`.
+- Kept chunked visible-face rendering active; smoke test generated about 162k blocks and 95k visible faces without script errors.
+
 ## 0.2.4-godot - 2026-09-07
 
 - Split reusable code out of `scripts/main.gd` into focused files under `scripts/ui`, `scripts/systems`, `scripts/utils` and `scripts/world`.

@@ -1,0 +1,25 @@
+{
+  "enabledByDefault": true,
+  "masterVolume": 0.28,
+  "music": {
+    "tempo": 108,
+    "wave": "square",
+    "sequence": [
+      "E4", "G4", "B4", "G4", "D4", "G4", "A4", "G4",
+      "C4", "E4", "G4", "E4", "B3", "D4", "G4", "D4",
+      "A3", "C4", "E4", "C4", "G3", "B3", "D4", "B3",
+      "C4", "E4", "A4", "G4", "E4", "D4", "C4", "rest"
+    ],
+    "bass": [
+      "E2", "E2", "G2", "G2", "C2", "C2", "D2", "D2",
+      "A1", "A1", "G1", "G1", "C2", "D2", "E2", "rest"
+    ]
+  },
+  "sfx": {
+    "break": { "wave": "square", "start": 150, "end": 72, "duration": 0.09, "volume": 0.45 },
+    "place": { "wave": "triangle", "start": 92, "end": 130, "duration": 0.08, "volume": 0.36 },
+    "jump": { "wave": "square", "start": 220, "end": 330, "duration": 0.11, "volume": 0.22 },
+    "step": { "wave": "triangle", "start": 70, "end": 56, "duration": 0.045, "volume": 0.16 },
+    "menu": { "wave": "square", "start": 420, "end": 630, "duration": 0.06, "volume": 0.22 }
+  }
+}

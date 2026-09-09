@@ -26,6 +26,8 @@ Avoid putting every new feature in `main.gd`. If a feature can live on its own, 
 ## Current Scripts
 
 - `scripts/main.gd`: game coordinator, player movement, world dictionary, chunk rebuild calls.
+- `scripts/systems/player_inventory.gd`: stores and spends collected items.
+- `scripts/systems/crafting_book.gd`: loads `assets/recipes.json` and applies craft results.
 - `scripts/ui/patch_notes_controller.gd`: loads Patch Notes data and controls opening/closing.
 - `scripts/ui/patch_notes_panel.gd`: builds and displays the Patch Notes screen.
 - `scripts/systems/audio_library.gd`: loads and plays WAV sounds/music.
@@ -39,4 +41,4 @@ Keep changes small and easy to review. Prefer adding data to JSON files before c
 
 ## Project Direction
 
-BlockForge Alpha should stay a local Minecraft-like voxel sandbox first. Do not add forced online mode, official server lists, hidden connection targets, account systems or always-online requirements. Optional community extensions can be explored later without changing the base project direction.
+BlockForge Alpha should grow as a local-first open-source voxel survival game with editable data files, moddable systems and optional community extensions.
