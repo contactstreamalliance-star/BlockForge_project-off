@@ -79,6 +79,9 @@ var retro_fog := false
 var message := "Clique sur Jouer pour commencer."
 var step_timer := 0.0
 var hud_timer := 0.0
+var last_status_text := ""
+var last_health_text := ""
+var last_debug_text := ""
 
 
 func _ready() -> void:
@@ -381,6 +384,7 @@ func _setup_ui() -> void:
 	_setup_inventory_ui()
 	_setup_game_over_ui()
 	_setup_patch_notes_ui()
+	_sync_hud_visibility()
 
 
 func _add_crosshair_line(pos: Vector2, size: Vector2) -> void:
@@ -492,8 +496,11 @@ func _toggle_inventory() -> void:
 		return
 	inventory_layer.visible = not inventory_layer.visible
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE if inventory_layer.visible else Input.MOUSE_MODE_CAPTURED)
+	_sync_hud_visibility()
 	if inventory_layer.visible:
 		_refresh_inventory_ui()
+	else:
+		_update_hud()
 
 
 func _refresh_inventory_ui() -> void:
@@ -988,8 +995,8 @@ func _die() -> void:
 	_drop_inventory_on_death()
 	player_inventory.clear()
 	_refresh_inventory_ui()
-	_update_hud()
 	game_over_layer.visible = true
+	_update_hud()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 
@@ -1192,6 +1199,7 @@ func _start_game(mode: String = MODE_SURVIVAL) -> void:
 	title_layer.visible = false
 	game_over_layer.visible = false
 	inventory_layer.visible = false
+	_sync_hud_visibility()
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	_play_sfx("menu")
 	audio_library.play_music()
@@ -1204,12 +1212,14 @@ func _pause_game() -> void:
 	game_active = false
 	title_layer.visible = true
 	inventory_layer.visible = false
+	_sync_hud_visibility()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	message = "Pause."
 
 
 func _show_patch_notes() -> void:
 	patch_notes_controller.open_panel()
+	_sync_hud_visibility()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	_play_sfx("menu")
 
@@ -1217,9 +1227,11 @@ func _show_patch_notes() -> void:
 func _hide_patch_notes() -> void:
 	_play_sfx("menu")
 	patch_notes_controller.close_panel()
+	_sync_hud_visibility()
 
 
 func _on_patch_notes_closed() -> void:
+	_sync_hud_visibility()
 	if game_active:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
@@ -1316,17 +1328,47 @@ func _rebuild_hotbar() -> void:
 
 
 func _update_hud() -> void:
+	_sync_hud_visibility()
+	if not hud_layer.visible:
+		return
 	var block_name := "?"
 	if selected_slot < hotbar.size():
 		block_name = String(blocks.get(String(hotbar[selected_slot]), {}).get("name", hotbar[selected_slot]))
-	status_label.text = "%s\nMode: %s | Bloc: %s\nZQSD/WASD marcher | clic gauche/droit casser/poser | E inventaire/craft | 1-9 blocs" % [
+	var status_text := "%s\nMode: %s | Bloc: %s\nZQSD/WASD marcher | clic gauche/droit casser/poser | E inventaire/craft | 1-9 blocs" % [
 		message,
 		"Survie" if game_mode == MODE_SURVIVAL else "Créatif",
 		block_name
 	]
+	if status_text != last_status_text:
+		status_label.text = status_text
+		last_status_text = status_text
+
 	health_label.visible = game_mode == MODE_SURVIVAL
-	health_label.text = "Vie: %s" % _health_bar_text()
-	debug_label.text = "BlockForge %s\nx %.1f y %.1f z %.1f\nseed %d\nfaces visibles %d\n%s" % [VERSION_LABEL, camera.position.x, camera.position.y, camera.position.z, world_seed, block_count, "brume douce" if retro_fog else "vue nette"]
+	if health_label.visible:
+		var health_text := "Vie: %s" % _health_bar_text()
+		if health_text != last_health_text:
+			health_label.text = health_text
+			last_health_text = health_text
+
+	var debug_text := "BlockForge %s\nx %.1f y %.1f z %.1f\nseed %d\nfaces visibles %d\n%s" % [VERSION_LABEL, camera.position.x, camera.position.y, camera.position.z, world_seed, block_count, "brume douce" if retro_fog else "vue nette"]
+	if debug_text != last_debug_text:
+		debug_label.text = debug_text
+		last_debug_text = debug_text
+
+
+func _sync_hud_visibility() -> void:
+	if hud_layer == null:
+		return
+	var overlays_open := false
+	overlays_open = overlays_open or (title_layer != null and title_layer.visible)
+	overlays_open = overlays_open or (inventory_layer != null and inventory_layer.visible)
+	overlays_open = overlays_open or (game_over_layer != null and game_over_layer.visible)
+	overlays_open = overlays_open or (patch_notes_controller != null and patch_notes_controller.is_open())
+	var should_show := game_active and not overlays_open
+	if hud_layer.visible != should_show:
+		hud_layer.visible = should_show
+	if not should_show and selected_outline != null:
+		selected_outline.visible = false
 
 
 func _health_bar_text() -> String:
