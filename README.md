@@ -4,20 +4,6 @@ BlockForge Alpha est une pré-alpha Godot native d'un bac à sable voxel open so
 
 Ce projet est indépendant de Minecraft. Il ne reprend aucun fichier, code, texture, son, nom, logo ou asset Minecraft.
 
-## Lancer avec Godot
-
-Ouvre ce dossier dans Godot :
-
-```text
-outputs/BlockForge_prject
-```
-
-ou lance directement :
-
-```powershell
-& "C:\Users\Utilisateur\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --path "C:\Users\Utilisateur\Documents\Codex\2026-09-06\serais-tu-capable-de-me-refaire\outputs\BlockForge_prject"
-```
-
 ## Contrôles
 
 - `Survie` : lance une partie avec vie, inventaire, craft et dégâts de chute.
