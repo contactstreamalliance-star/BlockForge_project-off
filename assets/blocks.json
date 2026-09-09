@@ -1,0 +1,112 @@
+{
+  "blocks": [
+    {
+      "id": "grass",
+      "name": "Herbe",
+      "solid": true,
+      "mineTime": 0.45,
+      "textures": {
+        "top": "res://assets/textures/blocks/grass_top.png",
+        "side": "res://assets/textures/blocks/grass_side.png",
+        "bottom": "res://assets/textures/blocks/dirt.png"
+      }
+    },
+    {
+      "id": "dirt",
+      "name": "Terre",
+      "solid": true,
+      "mineTime": 0.35,
+      "textures": {
+        "all": "res://assets/textures/blocks/dirt.png"
+      }
+    },
+    {
+      "id": "stone",
+      "name": "Pierre",
+      "solid": true,
+      "mineTime": 1.2,
+      "drops": "cobble",
+      "textures": {
+        "all": "res://assets/textures/blocks/stone.png"
+      }
+    },
+    {
+      "id": "sand",
+      "name": "Sable",
+      "solid": true,
+      "mineTime": 0.3,
+      "textures": {
+        "all": "res://assets/textures/blocks/sand.png"
+      }
+    },
+    {
+      "id": "log",
+      "name": "Tronc",
+      "solid": true,
+      "mineTime": 0.7,
+      "textures": {
+        "top": "res://assets/textures/blocks/log_top.png",
+        "side": "res://assets/textures/blocks/log_side.png",
+        "bottom": "res://assets/textures/blocks/log_top.png"
+      }
+    },
+    {
+      "id": "leaves",
+      "name": "Feuilles",
+      "solid": true,
+      "mineTime": 0.22,
+      "textures": {
+        "all": "res://assets/textures/blocks/leaves.png"
+      }
+    },
+    {
+      "id": "planks",
+      "name": "Planches",
+      "solid": true,
+      "mineTime": 0.55,
+      "textures": {
+        "all": "res://assets/textures/blocks/planks.png"
+      }
+    },
+    {
+      "id": "cobble",
+      "name": "Pierres",
+      "solid": true,
+      "mineTime": 1.0,
+      "textures": {
+        "all": "res://assets/textures/blocks/cobble.png"
+      }
+    },
+    {
+      "id": "glass",
+      "name": "Verre",
+      "solid": true,
+      "mineTime": 0.2,
+      "transparent": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/glass.png"
+      }
+    },
+    {
+      "id": "water",
+      "name": "Eau",
+      "solid": false,
+      "mineTime": 0.1,
+      "liquid": true,
+      "transparent": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/water.png"
+      }
+    },
+    {
+      "id": "marble",
+      "name": "Marbre",
+      "solid": true,
+      "mineTime": 0.8,
+      "textures": {
+        "all": "res://assets/textures/blocks/marble.png"
+      }
+    }
+  ],
+  "hotbar": ["grass", "dirt", "stone", "sand", "log", "leaves", "planks", "cobble", "marble"]
+}
