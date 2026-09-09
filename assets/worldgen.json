@@ -1,0 +1,13 @@
+{
+  "seed": 173419,
+  "terrainMode": "showcase_flat",
+  "size": 48,
+  "maxHeight": 18,
+  "waterLevel": 6,
+  "waterEnabled": false,
+  "treeChance": 0.003,
+  "oreChance": 0.002,
+  "randomSeedOnStart": false,
+  "spawnPlateauRadius": 18,
+  "spawnPlateauHeight": 10
+}
