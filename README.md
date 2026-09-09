@@ -1,6 +1,6 @@
 # BlockForge Alpha
 
-BlockForge Alpha est une base Godot pour construire un Minecraft-like open source : exploration locale, blocs, craft, ressources, survie douce et fichiers faciles a modifier.
+BlockForge Alpha est une base Godot pour construire un voxel game survival open source : exploration locale, blocs, craft, ressources, survie douce et fichiers faciles a modifier.
 
 Ce projet est un jeu local avant tout. Il ne doit pas devenir un jeu avec serveur obligatoire. Le coeur du projet doit rester jouable en local, ouvert aux modifications et simple a publier sur GitHub.
 
@@ -12,15 +12,7 @@ Ce projet est un jeu local avant tout. Il ne doit pas devenir un jeu avec serveu
 - modding communautaire sans dependance a des modloaders Minecraft ;
 - multijoueur seulement optionnel plus tard, jamais obligatoire ;
 - aucune IP personnelle, aucun serveur officiel cache, aucun compte en ligne force.
-
-## Ouvrir le projet
-
-1. Ouvre Godot.
-2. Choisis `Importer`.
-3. Selectionne ce dossier : `C:\Users\Utilisateur\Documents\Codex\2026-08-10\j\outputs\BlockForge_prject`.
-4. Ouvre le fichier `project.godot`.
-5. Lance la scene principale.
-
+- 
 ## Controles actuels
 
 - `Z` ou `W` : avancer
@@ -51,7 +43,6 @@ Ce projet est un jeu local avant tout. Il ne doit pas devenir un jeu avec serveu
 
 Cette copie contient encore une scene Godot de test avec des assets temporaires. Elle doit maintenant etre recentree vers BlockForge :
 
-- remplacer progressivement les anciens systemes RPG en ligne par des systemes de blocs ;
 - ajouter un vrai monde voxel modifiable ;
 - ajouter inventaire, craft, outils et ressources ;
 - garder tous les fichiers modifiables directement ;
