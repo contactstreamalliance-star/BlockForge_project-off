@@ -1,0 +1,2 @@
+Source downloads kept for license/source traceability.
+Godot should ignore this folder; runtime assets are copied to assets/models and assets/audio.
