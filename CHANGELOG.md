@@ -16,12 +16,12 @@
 - Added inventory, craft recipes, health, fall damage, Game Over and respawn flow.
 - Added dropped item pickups after death.
 - Added granite, clay, coal ore, iron ore, coal, raw iron and workbench data/textures.
-- Added `src/systems/player_inventory.gd` and `src/systems/crafting_book.gd`.
+- Added `scripts/systems/player_inventory.gd` and `scripts/systems/crafting_book.gd`.
 - Kept chunked visible-face rendering active; smoke test generated about 162k blocks and 95k visible faces without script errors.
 
 ## 0.2.4-godot - 2026-09-07
 
-- Split reusable code out of `src/main.gd` into focused files under `src/ui`, `src/systems`, `src/utils` and `src/world`.
+- Split reusable code out of `scripts/main.gd` into focused files under `scripts/ui`, `scripts/systems`, `scripts/utils` and `scripts/world`.
 - Added `PatchNotesPanel`, `AudioLibrary`, `TextureCache`, `BlockMaterialFactory` and `SelectionOutline` scripts.
 - Removed old unused helper code from `main.gd`.
 - Added architecture documentation for future contributors.

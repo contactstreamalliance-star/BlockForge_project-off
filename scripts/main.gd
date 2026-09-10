@@ -32,14 +32,14 @@ const MODE_CREATIVE := "creative"
 const MAX_HEALTH := 20
 const FALL_SAFE_HEIGHT := 4.0
 
-const AudioLibraryScript := preload("res://src/systems/audio_library.gd")
-const BlockMaterialFactoryScript := preload("res://src/world/block_material_factory.gd")
-const CraftingBookScript := preload("res://src/systems/crafting_book.gd")
-const PatchNotesControllerScript := preload("res://src/ui/patch_notes_controller.gd")
-const PlayerInventoryScript := preload("res://src/systems/player_inventory.gd")
-const SelectionOutlineScript := preload("res://src/world/selection_outline.gd")
-const TextureCacheScript := preload("res://src/utils/texture_cache.gd")
-const VoxelMathScript := preload("res://src/world/voxel_math.gd")
+const AudioLibraryScript := preload("res://scripts/systems/audio_library.gd")
+const BlockMaterialFactoryScript := preload("res://scripts/world/block_material_factory.gd")
+const CraftingBookScript := preload("res://scripts/systems/crafting_book.gd")
+const PatchNotesControllerScript := preload("res://scripts/ui/patch_notes_controller.gd")
+const PlayerInventoryScript := preload("res://scripts/systems/player_inventory.gd")
+const SelectionOutlineScript := preload("res://scripts/world/selection_outline.gd")
+const TextureCacheScript := preload("res://scripts/utils/texture_cache.gd")
+const VoxelMathScript := preload("res://scripts/world/voxel_math.gd")
 
 var camera: Camera3D
 var world_environment: WorldEnvironment
