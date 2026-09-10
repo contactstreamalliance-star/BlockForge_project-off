@@ -3,7 +3,7 @@ extends Node3D
 const BLOCKS_PATH := "res://assets/blocks.json"
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
-const VERSION_LABEL := "0.3.1"
+const VERSION_LABEL := "0.3.5"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -20,19 +20,26 @@ const FACE_BACK := 5
 const CHUNK_SIZE := 16
 const HUD_REFRESH_TIME := 0.15
 const CHUNK_STREAM_CHECK_TIME := 0.25
+const CHUNK_REBUILDS_PER_TICK := 1
+const CHUNK_GENERATIONS_PER_TICK := 1
+const CHUNK_GENERATION_COLUMNS_PER_TICK := 10
+const TARGET_REFRESH_TIME := 0.06
+const TARGET_RAY_STEP := 0.08
+const DROPPED_ITEM_REFRESH_TIME := 0.08
+const BLOCK_ACTION_COOLDOWN := 0.09
 const MODE_SURVIVAL := "survival"
 const MODE_CREATIVE := "creative"
 const MAX_HEALTH := 20
 const FALL_SAFE_HEIGHT := 4.0
 
-const AudioLibraryScript := preload("res://scripts/systems/audio_library.gd")
-const BlockMaterialFactoryScript := preload("res://scripts/world/block_material_factory.gd")
-const CraftingBookScript := preload("res://scripts/systems/crafting_book.gd")
-const PatchNotesControllerScript := preload("res://scripts/ui/patch_notes_controller.gd")
-const PlayerInventoryScript := preload("res://scripts/systems/player_inventory.gd")
-const SelectionOutlineScript := preload("res://scripts/world/selection_outline.gd")
-const TextureCacheScript := preload("res://scripts/utils/texture_cache.gd")
-const VoxelMathScript := preload("res://scripts/world/voxel_math.gd")
+const AudioLibraryScript := preload("res://src/systems/audio_library.gd")
+const BlockMaterialFactoryScript := preload("res://src/world/block_material_factory.gd")
+const CraftingBookScript := preload("res://src/systems/crafting_book.gd")
+const PatchNotesControllerScript := preload("res://src/ui/patch_notes_controller.gd")
+const PlayerInventoryScript := preload("res://src/systems/player_inventory.gd")
+const SelectionOutlineScript := preload("res://src/world/selection_outline.gd")
+const TextureCacheScript := preload("res://src/utils/texture_cache.gd")
+const VoxelMathScript := preload("res://src/world/voxel_math.gd")
 
 var camera: Camera3D
 var world_environment: WorldEnvironment
@@ -62,9 +69,16 @@ var placeable_blocks := []
 var hotbar := []
 var world := {}
 var chunk_blocks := {}
+var chunk_visible_blocks := {}
+var generated_chunk_keys := {}
 var chunk_nodes := {}
 var chunk_face_counts := {}
 var visible_chunk_keys := {}
+var chunk_generation_queue := []
+var queued_chunk_generations := {}
+var active_chunk_generation := {}
+var chunk_rebuild_queue := []
+var queued_chunk_rebuilds := {}
 var selected_slot := 0
 var selected_target = null
 var worldgen := {}
@@ -84,6 +98,13 @@ var message := "Clique sur Jouer pour commencer."
 var step_timer := 0.0
 var hud_timer := 0.0
 var chunk_stream_timer := 0.0
+var target_timer := 0.0
+var target_dirty := true
+var dropped_item_timer := 0.0
+var block_action_timer := 0.0
+var bulk_world_update := false
+var hotbar_labels := []
+var hotbar_last_texts := []
 var last_status_text := ""
 var last_health_text := ""
 var last_debug_text := ""
@@ -109,8 +130,11 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_process_chunk_generation_queue(CHUNK_GENERATIONS_PER_TICK)
+	_process_chunk_rebuild_queue(CHUNK_REBUILDS_PER_TICK)
 	if not game_active:
 		return
+	block_action_timer = maxf(0.0, block_action_timer - delta)
 	was_grounded = grounded
 	_update_movement(delta)
 	chunk_stream_timer -= delta
@@ -118,8 +142,15 @@ func _physics_process(delta: float) -> void:
 		chunk_stream_timer = CHUNK_STREAM_CHECK_TIME
 		_update_streamed_chunks()
 	_update_fall_damage()
-	_update_dropped_items(delta)
-	_update_target()
+	dropped_item_timer -= delta
+	if dropped_item_timer <= 0.0:
+		dropped_item_timer = DROPPED_ITEM_REFRESH_TIME
+		_update_dropped_items(DROPPED_ITEM_REFRESH_TIME)
+	target_timer -= delta
+	if target_dirty or target_timer <= 0.0:
+		target_timer = TARGET_REFRESH_TIME
+		target_dirty = false
+		_update_target()
 	hud_timer -= delta
 	if hud_timer <= 0.0:
 		hud_timer = HUD_REFRESH_TIME
@@ -577,38 +608,113 @@ func _load_png_texture(path: String) -> Texture2D:
 func _generate_world() -> void:
 	world.clear()
 	chunk_blocks.clear()
+	chunk_visible_blocks.clear()
+	generated_chunk_keys.clear()
+	chunk_generation_queue.clear()
+	queued_chunk_generations.clear()
+	active_chunk_generation.clear()
 	world_seed = int(worldgen.get("seed", 1))
 	if bool(worldgen.get("randomSeedOnStart", false)):
 		world_seed += randi_range(0, 999999)
-	var size := int(worldgen.get("size", 44))
-	var half: int = int(size / 2)
-	var min_y := int(worldgen.get("minHeight", -16))
-	var water_level := int(worldgen.get("waterLevel", 8))
-	var water_enabled := bool(worldgen.get("waterEnabled", false))
-	var tree_spots := []
-
-	for x in range(-half, half + 1):
-		for z in range(-half, half + 1):
-			var height := _terrain_height(x, z)
-			for y in range(min_y, height + 1):
-				if _is_cave_air(x, y, z, height):
-					continue
-				var id := _natural_block_id(x, y, z, height, water_level)
-				_set_block(x, y, z, id)
-
-			if water_enabled and height < water_level:
-				for y in range(height + 1, water_level + 1):
-					_set_block(x, y, z, "water")
-
-			if height > water_level + 2 and (abs(x) > 8 or abs(z) > 8) and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < float(worldgen.get("treeChance", 0.006)):
-				tree_spots.append(Vector3i(x, height + 1, z))
-
-	for spot in tree_spots:
-		_grow_tree(spot.x, spot.y, spot.z)
-
+	bulk_world_update = true
 	_clear_spawn_area()
 	_add_showcase_details()
+	bulk_world_update = false
+	for chunk_key in chunk_blocks.keys():
+		_rebuild_visible_block_cache(chunk_key)
+	for chunk_key in _desired_chunk_keys(Vector2i.ZERO).keys():
+		_queue_chunk_generation(chunk_key)
 	message = "Nouveau monde généré."
+
+
+func _ensure_chunk_generated(chunk_key: String) -> void:
+	if generated_chunk_keys.has(chunk_key):
+		return
+	var job := _create_chunk_generation_job(chunk_key)
+	if job.is_empty():
+		return
+	while not job.is_empty():
+		_process_chunk_generation_job(job, 999999)
+
+
+func _create_chunk_generation_job(chunk_key: String) -> Dictionary:
+	var coords := _parse_chunk_key(chunk_key)
+	var size := int(worldgen.get("size", 44))
+	var half: int = int(size / 2)
+	var start_x := coords.x * CHUNK_SIZE
+	var start_z := coords.y * CHUNK_SIZE
+	var end_x := start_x + CHUNK_SIZE - 1
+	var end_z := start_z + CHUNK_SIZE - 1
+	if end_x < -half or start_x > half or end_z < -half or start_z > half:
+		generated_chunk_keys[chunk_key] = true
+		return {}
+
+	var min_x: int = maxi(-half, start_x)
+	var max_x: int = mini(half, end_x)
+	var min_z: int = maxi(-half, start_z)
+	var max_z: int = mini(half, end_z)
+	return {
+		"chunk_key": chunk_key,
+		"min_x": min_x,
+		"max_x": max_x,
+		"min_z": min_z,
+		"max_z": max_z,
+		"x": min_x,
+		"z": min_z,
+		"tree_spots": [],
+		"min_y": int(worldgen.get("minHeight", -16)),
+		"water_level": int(worldgen.get("waterLevel", 8)),
+		"water_enabled": bool(worldgen.get("waterEnabled", false))
+	}
+
+
+func _process_chunk_generation_job(job: Dictionary, max_columns: int) -> bool:
+	var count := 0
+	bulk_world_update = true
+	while count < max_columns and not job.is_empty():
+		var x := int(job["x"])
+		var z := int(job["z"])
+		_generate_chunk_column(job, x, z)
+		count += 1
+		z += 1
+		if z > int(job["max_z"]):
+			z = int(job["min_z"])
+			x += 1
+		job["x"] = x
+		job["z"] = z
+		if x > int(job["max_x"]):
+			bulk_world_update = false
+			var chunk_key := String(job["chunk_key"])
+			var tree_spots: Array = job["tree_spots"]
+			for i in range(tree_spots.size()):
+				var spot: Vector3i = tree_spots[i]
+				_grow_tree(spot.x, spot.y, spot.z)
+			generated_chunk_keys[chunk_key] = true
+			_rebuild_visible_block_cache(chunk_key)
+			job.clear()
+			return true
+	bulk_world_update = false
+	return false
+
+
+func _generate_chunk_column(job: Dictionary, x: int, z: int) -> void:
+	var height := _terrain_height(x, z)
+	var min_y := int(job["min_y"])
+	var water_level := int(job["water_level"])
+	var water_enabled := bool(job["water_enabled"])
+	for y in range(min_y, height + 1):
+		if _is_cave_air(x, y, z, height):
+			continue
+		_set_block(x, y, z, _natural_block_id(x, y, z, height, water_level))
+
+	if water_enabled and height < water_level:
+		for y in range(height + 1, water_level + 1):
+			_set_block(x, y, z, "water")
+
+	if height > water_level + 2 and (abs(x) > 8 or abs(z) > 8) and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < float(worldgen.get("treeChance", 0.006)):
+		var tree_spots: Array = job["tree_spots"]
+		tree_spots.append(Vector3i(x, height + 1, z))
+		job["tree_spots"] = tree_spots
 
 
 func _terrain_height(x: int, z: int) -> int:
@@ -706,29 +812,18 @@ func _grow_tree(x: int, y: int, z: int) -> void:
 
 
 func _clear_spawn_area() -> void:
-	var water_level := int(worldgen.get("waterLevel", 6))
 	var min_y := int(worldgen.get("minHeight", -16))
-	var max_y := int(worldgen.get("maxHeight", 20)) + 12
 	var radius := int(worldgen.get("spawnPlateauRadius", 13))
-	var plateau_height := int(worldgen.get("spawnPlateauHeight", water_level + 4))
+	var plateau_height := int(worldgen.get("spawnPlateauHeight", int(worldgen.get("waterLevel", 6)) + 4))
 	for x in range(-radius, radius + 1):
 		for z in range(-radius, radius + 1):
-			var ground_y := _highest_ground_y(x, z)
-			if maxi(abs(x), abs(z)) <= radius:
-				for y in range(min_y, max_y + 1):
-					if y < plateau_height - 3:
-						_set_block(x, y, z, "stone")
-					elif y < plateau_height:
-						_set_block(x, y, z, "dirt")
-					elif y == plateau_height:
-						_set_block(x, y, z, "grass")
-					else:
-						_set_block(x, y, z, "")
-				continue
-			for y in range(max(water_level + 1, ground_y + 1), max_y + 1):
-				var id := _get_block(x, y, z)
-				if id == "leaves" or id == "log" or id == "water":
-					_set_block(x, y, z, "")
+			for y in range(min_y, plateau_height + 1):
+				if y < plateau_height - 3:
+					_set_block(x, y, z, "stone")
+				elif y < plateau_height:
+					_set_block(x, y, z, "dirt")
+				else:
+					_set_block(x, y, z, "grass")
 
 
 func _rebuild_meshes() -> void:
@@ -737,6 +832,8 @@ func _rebuild_meshes() -> void:
 	chunk_nodes.clear()
 	chunk_face_counts.clear()
 	visible_chunk_keys.clear()
+	chunk_rebuild_queue.clear()
+	queued_chunk_rebuilds.clear()
 	block_count = 0
 	last_stream_chunk = Vector2i(999999, 999999)
 	_update_streamed_chunks(true)
@@ -751,19 +848,21 @@ func _update_streamed_chunks(force: bool = false) -> void:
 	last_stream_chunk = center
 	var desired := _desired_chunk_keys(center)
 
-	for chunk_key in visible_chunk_keys.keys():
-		if not desired.has(chunk_key):
-			_clear_chunk_meshes(chunk_key)
-
 	for chunk_key in desired.keys():
-		if not visible_chunk_keys.has(chunk_key):
-			_rebuild_chunk(chunk_key)
+		if not generated_chunk_keys.has(chunk_key):
+			visible_chunk_keys[chunk_key] = true
+			_queue_chunk_generation(chunk_key)
+			if chunk_blocks.has(chunk_key):
+				_queue_chunk_rebuild(chunk_key)
+		elif not visible_chunk_keys.has(chunk_key):
+			_queue_chunk_rebuild(chunk_key)
 
 
-func _desired_chunk_keys(center: Vector2i) -> Dictionary:
+func _desired_chunk_keys(center: Vector2i, extra_distance: int = 0) -> Dictionary:
 	var desired := {}
-	for cx in range(center.x - render_distance_chunks, center.x + render_distance_chunks + 1):
-		for cz in range(center.y - render_distance_chunks, center.y + render_distance_chunks + 1):
+	var distance := render_distance_chunks + extra_distance
+	for cx in range(center.x - distance, center.x + distance + 1):
+		for cz in range(center.y - distance, center.y + distance + 1):
 			desired[_chunk_key_from_coords(cx, cz)] = true
 	return desired
 
@@ -777,7 +876,8 @@ func _rebuild_nearby_chunks(pos: Vector3i) -> void:
 	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.BACK, CHUNK_SIZE)] = true
 	for chunk_key in chunks_to_build.keys():
 		if visible_chunk_keys.has(chunk_key):
-			_rebuild_chunk(chunk_key)
+			_queue_chunk_rebuild(chunk_key, true)
+	_mark_target_dirty()
 	_update_hud()
 
 
@@ -790,12 +890,70 @@ func _clear_chunk_meshes(chunk_key: String, forget_visible: bool = true) -> void
 	chunk_face_counts.erase(chunk_key)
 	if forget_visible:
 		visible_chunk_keys.erase(chunk_key)
+		queued_chunk_rebuilds.erase(chunk_key)
+		queued_chunk_generations.erase(chunk_key)
+
+
+func _queue_chunk_rebuild(chunk_key: String, front: bool = false) -> void:
+	if chunk_key == "":
+		return
+	if queued_chunk_rebuilds.has(chunk_key):
+		if front:
+			chunk_rebuild_queue.erase(chunk_key)
+			chunk_rebuild_queue.push_front(chunk_key)
+		return
+	visible_chunk_keys[chunk_key] = true
+	queued_chunk_rebuilds[chunk_key] = true
+	if front:
+		chunk_rebuild_queue.push_front(chunk_key)
+	else:
+		chunk_rebuild_queue.append(chunk_key)
+
+
+func _queue_chunk_generation(chunk_key: String) -> void:
+	if chunk_key == "" or generated_chunk_keys.has(chunk_key) or queued_chunk_generations.has(chunk_key):
+		return
+	queued_chunk_generations[chunk_key] = true
+	chunk_generation_queue.append(chunk_key)
+
+
+func _process_chunk_generation_queue(max_count: int) -> void:
+	var finished := 0
+	while finished < max_count:
+		if active_chunk_generation.is_empty():
+			if chunk_generation_queue.is_empty():
+				return
+			var chunk_key := String(chunk_generation_queue.pop_front())
+			queued_chunk_generations.erase(chunk_key)
+			if generated_chunk_keys.has(chunk_key):
+				continue
+			active_chunk_generation = _create_chunk_generation_job(chunk_key)
+			if active_chunk_generation.is_empty():
+				continue
+		var active_key := String(active_chunk_generation.get("chunk_key", ""))
+		if _process_chunk_generation_job(active_chunk_generation, CHUNK_GENERATION_COLUMNS_PER_TICK):
+			if active_key != "":
+				_queue_chunk_rebuild(active_key)
+			finished += 1
+		else:
+			return
+
+
+func _process_chunk_rebuild_queue(max_count: int) -> void:
+	var built := 0
+	while built < max_count and not chunk_rebuild_queue.is_empty():
+		var chunk_key := String(chunk_rebuild_queue.pop_front())
+		queued_chunk_rebuilds.erase(chunk_key)
+		if not visible_chunk_keys.has(chunk_key):
+			continue
+		_rebuild_chunk(chunk_key)
+		built += 1
 
 
 func _rebuild_chunk(chunk_key: String) -> void:
 	_clear_chunk_meshes(chunk_key, false)
 	visible_chunk_keys[chunk_key] = true
-	var keys: Array = chunk_blocks.get(chunk_key, {}).keys()
+	var keys: Array = _visible_keys_for_chunk(chunk_key)
 	if keys.is_empty():
 		return
 
@@ -907,6 +1065,52 @@ func _is_visible_block(x: int, y: int, z: int, id: String) -> bool:
 		if _should_render_face(id, neighbor_id, face):
 			return true
 	return false
+
+
+func _visible_keys_for_chunk(chunk_key: String) -> Array:
+	if not chunk_visible_blocks.has(chunk_key):
+		_rebuild_visible_block_cache(chunk_key)
+	return chunk_visible_blocks.get(chunk_key, {}).keys()
+
+
+func _rebuild_visible_block_cache(chunk_key: String) -> void:
+	var visible := {}
+	for key in chunk_blocks.get(chunk_key, {}).keys():
+		var id := String(world.get(key, ""))
+		if id == "":
+			continue
+		var p := _parse_key(String(key))
+		if _is_visible_block(p.x, p.y, p.z, id):
+			visible[key] = true
+	if visible.is_empty():
+		chunk_visible_blocks.erase(chunk_key)
+	else:
+		chunk_visible_blocks[chunk_key] = visible
+
+
+func _refresh_visibility_around(pos: Vector3i) -> void:
+	_refresh_single_block_visibility(pos)
+	_refresh_single_block_visibility(pos + Vector3i.RIGHT)
+	_refresh_single_block_visibility(pos + Vector3i.LEFT)
+	_refresh_single_block_visibility(pos + Vector3i.UP)
+	_refresh_single_block_visibility(pos + Vector3i.DOWN)
+	_refresh_single_block_visibility(pos + Vector3i.FORWARD)
+	_refresh_single_block_visibility(pos + Vector3i.BACK)
+
+
+func _refresh_single_block_visibility(pos: Vector3i) -> void:
+	var key := _block_key(pos.x, pos.y, pos.z)
+	var chunk_key := VoxelMathScript.chunk_key_for_block(pos, CHUNK_SIZE)
+	var id := String(world.get(key, ""))
+	if id != "" and _is_visible_block(pos.x, pos.y, pos.z, id):
+		if not chunk_visible_blocks.has(chunk_key):
+			chunk_visible_blocks[chunk_key] = {}
+		chunk_visible_blocks[chunk_key][key] = true
+		return
+	if chunk_visible_blocks.has(chunk_key):
+		chunk_visible_blocks[chunk_key].erase(key)
+		if chunk_visible_blocks[chunk_key].is_empty():
+			chunk_visible_blocks.erase(chunk_key)
 
 
 func _spawn_player() -> void:
@@ -1121,23 +1325,36 @@ func _clear_dropped_items() -> void:
 
 func _can_occupy(pos: Vector3) -> bool:
 	var foot_y := pos.y - EYE_HEIGHT
-	var sample_ys := [foot_y + 0.05, foot_y + PLAYER_HEIGHT * 0.5, foot_y + PLAYER_HEIGHT - 0.08]
-	for sy in sample_ys:
-		for sx in [pos.x - PLAYER_RADIUS, pos.x + PLAYER_RADIUS]:
-			for sz in [pos.z - PLAYER_RADIUS, pos.z + PLAYER_RADIUS]:
-				var id := _get_block_at_point(Vector3(sx, sy, sz))
-				if bool(blocks.get(id, {}).get("solid", false)):
-					return false
-	return true
+	var x0 := pos.x - PLAYER_RADIUS
+	var x1 := pos.x + PLAYER_RADIUS
+	var z0 := pos.z - PLAYER_RADIUS
+	var z1 := pos.z + PLAYER_RADIUS
+	var y0 := foot_y + 0.05
+	var y1 := foot_y + PLAYER_HEIGHT * 0.5
+	var y2 := foot_y + PLAYER_HEIGHT - 0.08
+	return not (
+		_is_solid_at_point(x0, y0, z0) or _is_solid_at_point(x0, y0, z1) or _is_solid_at_point(x1, y0, z0) or _is_solid_at_point(x1, y0, z1)
+		or _is_solid_at_point(x0, y1, z0) or _is_solid_at_point(x0, y1, z1) or _is_solid_at_point(x1, y1, z0) or _is_solid_at_point(x1, y1, z1)
+		or _is_solid_at_point(x0, y2, z0) or _is_solid_at_point(x0, y2, z1) or _is_solid_at_point(x1, y2, z0) or _is_solid_at_point(x1, y2, z1)
+	)
+
+
+func _is_solid_at_point(x: float, y: float, z: float) -> bool:
+	var id := _get_block(floori(x + 0.5), floori(y + 0.5), floori(z + 0.5))
+	return bool(blocks.get(id, {}).get("solid", false))
 
 
 func _update_target() -> void:
 	selected_target = _voxel_raycast(6.2)
 	if selected_target == null:
-		selected_outline.visible = false
+		if selected_outline.visible:
+			selected_outline.visible = false
 		return
-	selected_outline.position = Vector3(selected_target["pos"])
-	selected_outline.visible = true
+	var target_position := Vector3(selected_target["pos"])
+	if selected_outline.position != target_position:
+		selected_outline.position = target_position
+	if not selected_outline.visible:
+		selected_outline.visible = true
 
 
 func _voxel_raycast(max_distance: float):
@@ -1149,7 +1366,7 @@ func _voxel_raycast(max_distance: float):
 		var sample := origin + direction * distance
 		var pos := Vector3i(floori(sample.x + 0.5), floori(sample.y + 0.5), floori(sample.z + 0.5))
 		if previous != null and previous == pos:
-			distance += 0.035
+			distance += TARGET_RAY_STEP
 			continue
 		var id := _get_block(pos.x, pos.y, pos.z)
 		if id != "" and not bool(blocks.get(id, {}).get("liquid", false)):
@@ -1160,8 +1377,13 @@ func _voxel_raycast(max_distance: float):
 				normal = _fallback_normal(direction)
 			return {"id": id, "pos": pos, "normal": normal}
 		previous = pos
-		distance += 0.035
+		distance += TARGET_RAY_STEP
 	return null
+
+
+func _mark_target_dirty() -> void:
+	target_dirty = true
+	target_timer = 0.0
 
 
 func _fallback_normal(direction: Vector3) -> Vector3i:
@@ -1176,6 +1398,11 @@ func _fallback_normal(direction: Vector3) -> Vector3i:
 
 
 func _break_target() -> void:
+	if block_action_timer > 0.0:
+		return
+	if target_dirty:
+		_update_target()
+		target_dirty = false
 	if selected_target == null:
 		message = "Aucun bloc à portée."
 		return
@@ -1183,16 +1410,23 @@ func _break_target() -> void:
 	var id: String = selected_target["id"]
 	var drop_id := String(blocks.get(id, {}).get("drops", id))
 	_set_block(pos.x, pos.y, pos.z, "")
+	block_action_timer = BLOCK_ACTION_COOLDOWN
 	if game_mode == MODE_SURVIVAL:
 		player_inventory.add_item(drop_id, 1)
 		_rebuild_hotbar()
 	_play_sfx("break")
 	message = "%s récupéré." % _block_name(drop_id)
 	_rebuild_nearby_chunks(pos)
+	_mark_target_dirty()
 	_refresh_inventory_if_open()
 
 
 func _place_target() -> void:
+	if block_action_timer > 0.0:
+		return
+	if target_dirty:
+		_update_target()
+		target_dirty = false
 	if selected_target == null:
 		message = "Vise une face de bloc pour construire."
 		return
@@ -1208,12 +1442,14 @@ func _place_target() -> void:
 		message = "Impossible de poser un bloc ici."
 		return
 	_set_block(pos.x, pos.y, pos.z, id)
+	block_action_timer = BLOCK_ACTION_COOLDOWN
 	if game_mode == MODE_SURVIVAL:
 		player_inventory.remove_item(id, 1)
 		_rebuild_hotbar()
 	_play_sfx("place")
 	message = "%s posé." % _block_name(id)
 	_rebuild_nearby_chunks(pos)
+	_mark_target_dirty()
 	_refresh_inventory_if_open()
 
 
@@ -1318,6 +1554,7 @@ func _rotate_view(relative: Vector2) -> void:
 	camera.rotation.y -= relative.x * LOOK_SPEED
 	camera.rotation.x -= relative.y * LOOK_SPEED
 	camera.rotation.x = clampf(camera.rotation.x, -PI / 2 + 0.02, PI / 2 - 0.02)
+	_mark_target_dirty()
 
 
 func _select_slot(index: int) -> void:
@@ -1346,24 +1583,43 @@ func _refresh_inventory_if_open() -> void:
 
 
 func _rebuild_hotbar() -> void:
-	for child in hotbar_box.get_children():
-		child.queue_free()
-	for i in range(min(hotbar.size(), 9)):
+	var slot_count: int = min(hotbar.size(), 9)
+	if hotbar_labels.size() != slot_count or hotbar_box.get_child_count() != slot_count:
+		for child in hotbar_box.get_children():
+			child.queue_free()
+		hotbar_labels.clear()
+		hotbar_last_texts.clear()
+		for i in range(slot_count):
+			var slot := PanelContainer.new()
+			slot.custom_minimum_size = Vector2(50, 50)
+			var label := Label.new()
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			slot.add_child(label)
+			hotbar_box.add_child(slot)
+			hotbar_labels.append(label)
+			hotbar_last_texts.append("")
+	_refresh_hotbar_labels()
+
+
+func _refresh_hotbar_labels() -> void:
+	for i in range(min(hotbar.size(), hotbar_labels.size())):
 		var id := String(hotbar[i])
 		var block: Dictionary = blocks.get(id, {})
-		var slot := PanelContainer.new()
-		slot.custom_minimum_size = Vector2(50, 50)
-		var label := Label.new()
 		var count_text := ""
 		if game_mode == MODE_SURVIVAL:
 			count_text = " x%d" % player_inventory.count(id)
-		label.text = "%d\n%s%s" % [i + 1, String(block.get("name", id)).left(6), count_text]
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var text := "%d\n%s%s" % [i + 1, String(block.get("name", id)).left(6), count_text]
+		var label: Label = hotbar_labels[i]
+		if i >= hotbar_last_texts.size():
+			hotbar_last_texts.append("")
+		if hotbar_last_texts[i] != text:
+			label.text = text
+			hotbar_last_texts[i] = text
 		if i == selected_slot:
 			label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.42))
-		slot.add_child(label)
-		hotbar_box.add_child(slot)
+		else:
+			label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 
 
 func _update_hud() -> void:
@@ -1422,18 +1678,27 @@ func _play_sfx(id: String) -> void:
 
 func _set_block(x: int, y: int, z: int, id: String) -> void:
 	var key := _block_key(x, y, z)
-	var chunk_key := VoxelMathScript.chunk_key_for_block(Vector3i(x, y, z), CHUNK_SIZE)
+	if String(world.get(key, "")) == id:
+		return
+	var pos := Vector3i(x, y, z)
+	var chunk_key := VoxelMathScript.chunk_key_for_block(pos, CHUNK_SIZE)
 	if id == "":
 		world.erase(key)
 		if chunk_blocks.has(chunk_key):
 			chunk_blocks[chunk_key].erase(key)
 			if chunk_blocks[chunk_key].is_empty():
 				chunk_blocks.erase(chunk_key)
+		if chunk_visible_blocks.has(chunk_key):
+			chunk_visible_blocks[chunk_key].erase(key)
+			if chunk_visible_blocks[chunk_key].is_empty():
+				chunk_visible_blocks.erase(chunk_key)
 	else:
 		world[key] = id
 		if not chunk_blocks.has(chunk_key):
 			chunk_blocks[chunk_key] = {}
 		chunk_blocks[chunk_key][key] = true
+	if not bulk_world_update:
+		_refresh_visibility_around(pos)
 
 
 func _get_block(x: int, y: int, z: int) -> String:
@@ -1450,6 +1715,11 @@ func _block_key(x: int, y: int, z: int) -> String:
 
 func _chunk_key_from_coords(cx: int, cz: int) -> String:
 	return "%d,%d" % [cx, cz]
+
+
+func _parse_chunk_key(key: String) -> Vector2i:
+	var parts := key.split(",")
+	return Vector2i(int(parts[0]), int(parts[1]))
 
 
 func _chunk_coords_for_world_position(pos: Vector3) -> Vector2i:

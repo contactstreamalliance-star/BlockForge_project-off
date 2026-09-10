@@ -1,21 +1,31 @@
 {
   "updates": [
     {
-      "version": "0.3.1-godot",
-      "title": "Grosse optimisation du rendu",
+      "version": "0.3.5-godot",
+      "title": "Optimisations regroupées",
       "date": "2026-09-10",
-      "description": "Réduction importante des lags en gardant le monde complet, mais en ne rendant que les chunks proches du joueur.",
+      "description": "Regroupement de toutes les passes d'optimisation dans une seule note pour garder un historique plus lisible.",
       "added": [
-        "Paramètre renderDistanceChunks dans assets/worldgen.json pour régler la distance de rendu."
+        "Découpage du monde en chunks de 16 x 16 blocs.",
+        "File d'attente pour reconstruire les chunks progressivement.",
+        "File d'attente pour générer les chunks proches progressivement.",
+        "Génération progressive par colonnes à l'intérieur de chaque chunk.",
+        "Cache des blocs réellement visibles pour éviter de reconstruire les blocs cachés.",
+        "Cache des textures PNG et matériaux mieux partagés pour les blocs à texture unique.",
+        "Cadence contrôlée pour le cassage et la pose de blocs."
       ],
       "changed": [
-        "Le jeu charge et décharge les meshes de chunks autour du joueur au lieu de rendre toute la carte en permanence.",
-        "Le lancement et la génération d'un nouveau monde construisent seulement les chunks proches du point d'apparition.",
-        "Les blocs à texture unique partagent un matériau et fusionnent davantage leurs faces dans les chunks.",
-        "Le HUD évite les réécritures de texte inutiles quand les valeurs affichées ne changent pas."
+        "La génération de carte est étalée sur plusieurs images au lieu d'être faite en un seul gros calcul.",
+        "Les chunks déjà affichés restent visibles quand le joueur s'éloigne.",
+        "La zone de spawn écrit moins de données inutiles.",
+        "La reconstruction d'un chunk utilise les blocs visibles au lieu de scanner tous les blocs pleins.",
+        "La barre d'inventaire met à jour ses textes sans recréer toute son interface à chaque action.",
+        "Le bloc visé, les objets au sol, les collisions et le HUD font moins de calculs répétés."
       ],
       "removed": [
-        "Rendu permanent des chunks éloignés, qui coûtait trop cher pour une grande carte."
+        "Reconstruction immédiate de plusieurs chunks en une seule frame.",
+        "Génération complète d'un chunk en une seule frame pendant l'exploration.",
+        "Écritures de blocs et rafraîchissements d'interface inutiles."
       ]
     },
     {
@@ -84,22 +94,6 @@
       ],
       "changed": [
         "Le menu principal accueille maintenant plus d'actions sans déborder."
-      ],
-      "removed": []
-    },
-    {
-      "version": "0.2.2-godot",
-      "title": "Optimisation du monde voxel",
-      "date": "2026-09-07",
-      "description": "Première passe sérieuse de performance pour rendre le cassage et la pose de blocs plus fluides.",
-      "added": [
-        "Découpage du monde en morceaux de 16 x 16 blocs.",
-        "Reconstruction locale des morceaux proches quand un bloc change.",
-        "Cache de textures PNG pour éviter de relire les mêmes images plusieurs fois."
-      ],
-      "changed": [
-        "Le HUD ne se met plus à jour à chaque image physique.",
-        "Les ombres des blocs restent désactivées pour garder une pré-alpha plus fluide."
       ],
       "removed": []
     },

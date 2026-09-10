@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.3.1-godot - 2026-09-10
+## 0.3.5-godot - 2026-09-10
 
-- Added `renderDistanceChunks` to `assets/worldgen.json`.
-- Changed world rendering to stream only chunks near the player instead of rendering the full map at once.
-- Changed new-world startup to spawn the player before building visible chunk meshes.
-- Reduced mesh groups and material duplication for blocks using one texture on all faces.
-- Reduced unnecessary HUD text rewrites.
+- Regrouped all optimization notes into one entry.
+- Added chunked world rebuilding, chunk rebuild queues, progressive chunk generation and column-by-column terrain generation.
+- Added visible-block caching, texture caching, shared materials for single-texture blocks and block action pacing.
+- Reduced repeated work in mesh rebuilds, world generation, spawn setup, hotbar refreshes, HUD updates, dropped item checks, collision checks and block targeting.
+- Kept already displayed chunks in the scene when the player moves away.
+- Removed separate optimization changelog entries to keep the history easier to read.
 
 ## 0.3.0-godot - 2026-09-10
 
@@ -15,12 +16,12 @@
 - Added inventory, craft recipes, health, fall damage, Game Over and respawn flow.
 - Added dropped item pickups after death.
 - Added granite, clay, coal ore, iron ore, coal, raw iron and workbench data/textures.
-- Added `scripts/systems/player_inventory.gd` and `scripts/systems/crafting_book.gd`.
+- Added `src/systems/player_inventory.gd` and `src/systems/crafting_book.gd`.
 - Kept chunked visible-face rendering active; smoke test generated about 162k blocks and 95k visible faces without script errors.
 
 ## 0.2.4-godot - 2026-09-07
 
-- Split reusable code out of `scripts/main.gd` into focused files under `scripts/ui`, `scripts/systems`, `scripts/utils` and `scripts/world`.
+- Split reusable code out of `src/main.gd` into focused files under `src/ui`, `src/systems`, `src/utils` and `src/world`.
 - Added `PatchNotesPanel`, `AudioLibrary`, `TextureCache`, `BlockMaterialFactory` and `SelectionOutline` scripts.
 - Removed old unused helper code from `main.gd`.
 - Added architecture documentation for future contributors.
@@ -30,13 +31,6 @@
 - Added an in-game Patch Notes menu available from the title screen and the Escape pause menu.
 - Added editable `assets/patch_notes.json` so update notes can be changed without rebuilding archives.
 - Added structured update entries with title, description, additions, modifications and removals.
-
-## 0.2.2-godot - 2026-09-07
-
-- Added 16 x 16 chunked mesh rebuilding so block edits no longer rebuild the entire world.
-- Added PNG texture caching during material setup.
-- Reduced HUD update work by refreshing debug text on a short timer instead of every physics frame.
-- Kept shadows disabled and documented the choice as a pre-alpha performance setting.
 
 ## 0.2.1-godot - 2026-09-07
 

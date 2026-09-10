@@ -3,7 +3,7 @@ extends Node
 signal closed
 
 const PATCH_NOTES_PATH := "res://assets/patch_notes.json"
-const PatchNotesPanelScript := preload("res://scripts/ui/patch_notes_panel.gd")
+const PatchNotesPanelScript := preload("res://src/ui/patch_notes_panel.gd")
 
 var _panel
 var _updates: Array = []
