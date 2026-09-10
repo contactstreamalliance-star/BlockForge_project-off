@@ -1,6 +1,8 @@
 extends PanelContainer
 
 signal pressed(item_id: String)
+signal drop_requested(item_id: String, slot_index: int)
+signal destroy_requested(item_id: String, slot_index: int)
 
 var normal_style := StyleBoxFlat.new()
 var hover_style := StyleBoxFlat.new()
@@ -8,6 +10,7 @@ var icon_rect: TextureRect
 var name_label: Label
 var count_label: Label
 var item_id := ""
+var inventory_index := -1
 
 
 func _init() -> void:
@@ -65,15 +68,19 @@ func _init() -> void:
 	box.add_child(count_label)
 
 
-func setup(display_name: String, amount: int, texture: Texture2D = null, block_id: String = "", show_name: bool = false) -> void:
+func setup(display_name: String, amount: int, texture: Texture2D = null, block_id: String = "", show_name: bool = false, slot_index: int = -1) -> void:
 	item_id = block_id
+	inventory_index = slot_index
 	name_label.text = display_name
 	name_label.visible = show_name
 	count_label.text = "x%d" % amount
 	count_label.visible = amount > 0
 	icon_rect.texture = texture
 	icon_rect.visible = texture != null
-	tooltip_text = "%s\nQuantite: %d" % [display_name, amount]
+	if item_id == "":
+		tooltip_text = display_name
+	else:
+		tooltip_text = "%s\nQuantite: %d\nClic gauche: barre rapide\nClic droit: jeter 1\nMaj + clic droit: detruire la pile" % [display_name, amount]
 
 
 func _on_mouse_entered() -> void:
@@ -85,5 +92,15 @@ func _on_mouse_exited() -> void:
 
 
 func _on_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	if item_id == "" or not (event is InputEventMouseButton):
+		return
+	var mouse_event := event as InputEventMouseButton
+	if not mouse_event.pressed:
+		return
+	if mouse_event.button_index == MOUSE_BUTTON_LEFT:
 		pressed.emit(item_id)
+	elif mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+		if mouse_event.shift_pressed:
+			destroy_requested.emit(item_id, inventory_index)
+		else:
+			drop_requested.emit(item_id, inventory_index)

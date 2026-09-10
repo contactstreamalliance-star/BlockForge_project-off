@@ -3,7 +3,7 @@ extends Node3D
 const BLOCKS_PATH := "res://assets/blocks.json"
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
-const VERSION_LABEL := "0.3.7"
+const VERSION_LABEL := "0.3.11"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -22,15 +22,25 @@ const HUD_REFRESH_TIME := 0.15
 const CHUNK_STREAM_CHECK_TIME := 0.25
 const CHUNK_REBUILDS_PER_TICK := 1
 const CHUNK_GENERATIONS_PER_TICK := 1
-const CHUNK_GENERATION_COLUMNS_PER_TICK := 10
-const TARGET_REFRESH_TIME := 0.06
-const TARGET_RAY_STEP := 0.08
+const CHUNK_GENERATION_COLUMNS_PER_TICK := 6
+const CHUNK_GENERATION_BUDGET_USEC := 1800
+const CHUNK_REBUILD_BUDGET_USEC := 2600
+const TARGET_REFRESH_TIME := 0.08
 const DROPPED_ITEM_REFRESH_TIME := 0.08
 const BLOCK_ACTION_COOLDOWN := 0.09
 const MODE_SURVIVAL := "survival"
 const MODE_CREATIVE := "creative"
 const MAX_HEALTH := 20
 const FALL_SAFE_HEIGHT := 4.0
+const NEIGHBOR_DIRS := [Vector3i.RIGHT, Vector3i.LEFT, Vector3i.UP, Vector3i.DOWN, Vector3i.FORWARD, Vector3i.BACK]
+const FACE_CORNERS := [
+	[Vector3(0.5, -0.5, 0.5), Vector3(0.5, -0.5, -0.5), Vector3(0.5, 0.5, -0.5), Vector3(0.5, 0.5, 0.5)],
+	[Vector3(-0.5, -0.5, -0.5), Vector3(-0.5, -0.5, 0.5), Vector3(-0.5, 0.5, 0.5), Vector3(-0.5, 0.5, -0.5)],
+	[Vector3(-0.5, 0.5, 0.5), Vector3(0.5, 0.5, 0.5), Vector3(0.5, 0.5, -0.5), Vector3(-0.5, 0.5, -0.5)],
+	[Vector3(-0.5, -0.5, -0.5), Vector3(0.5, -0.5, -0.5), Vector3(0.5, -0.5, 0.5), Vector3(-0.5, -0.5, 0.5)],
+	[Vector3(0.5, -0.5, -0.5), Vector3(-0.5, -0.5, -0.5), Vector3(-0.5, 0.5, -0.5), Vector3(0.5, 0.5, -0.5)],
+	[Vector3(-0.5, -0.5, 0.5), Vector3(0.5, -0.5, 0.5), Vector3(0.5, 0.5, 0.5), Vector3(-0.5, 0.5, 0.5)]
+]
 
 const AudioLibraryScript := preload("res://scripts/systems/audio_library.gd")
 const BlockMaterialFactoryScript := preload("res://scripts/world/block_material_factory.gd")
@@ -110,6 +120,8 @@ var hotbar_icons := []
 var hotbar_counts := []
 var hotbar_keys := []
 var hotbar_last_signatures := []
+var hotbar_normal_style: StyleBoxFlat
+var hotbar_selected_style: StyleBoxFlat
 var last_status_text := ""
 var last_health_text := ""
 var last_debug_text := ""
@@ -281,6 +293,7 @@ func _setup_world_nodes() -> void:
 
 
 func _setup_ui() -> void:
+	_setup_hotbar_styles()
 	title_layer = CanvasLayer.new()
 	title_layer.name = "TitleLayer"
 	add_child(title_layer)
@@ -435,6 +448,26 @@ func _setup_ui() -> void:
 	_sync_hud_visibility()
 
 
+func _setup_hotbar_styles() -> void:
+	hotbar_normal_style = StyleBoxFlat.new()
+	hotbar_normal_style.bg_color = Color(0.06, 0.07, 0.08, 0.84)
+	hotbar_normal_style.border_color = Color(0.35, 0.40, 0.40, 0.78)
+	hotbar_normal_style.set_border_width_all(1)
+	hotbar_normal_style.corner_radius_top_left = 4
+	hotbar_normal_style.corner_radius_top_right = 4
+	hotbar_normal_style.corner_radius_bottom_left = 4
+	hotbar_normal_style.corner_radius_bottom_right = 4
+
+	hotbar_selected_style = StyleBoxFlat.new()
+	hotbar_selected_style.bg_color = Color(0.17, 0.19, 0.18, 0.92)
+	hotbar_selected_style.border_color = Color(1.0, 0.88, 0.34, 0.95)
+	hotbar_selected_style.set_border_width_all(2)
+	hotbar_selected_style.corner_radius_top_left = 4
+	hotbar_selected_style.corner_radius_top_right = 4
+	hotbar_selected_style.corner_radius_bottom_left = 4
+	hotbar_selected_style.corner_radius_bottom_right = 4
+
+
 func _add_crosshair_line(pos: Vector2, size: Vector2) -> void:
 	var line := ColorRect.new()
 	line.position = pos
@@ -479,7 +512,7 @@ func _setup_inventory_ui() -> void:
 	inventory_column.add_child(inventory_title)
 
 	var inventory_hint := Label.new()
-	inventory_hint.text = "1-9 choisit une case. Clique une texture pour modifier la barre rapide."
+	inventory_hint.text = "1-9 choisit une case. Clic gauche: barre rapide. Clic droit: jeter 1. Maj + clic droit: detruire la pile."
 	inventory_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	inventory_hint.add_theme_font_size_override("font_size", 13)
 	inventory_column.add_child(inventory_hint)
@@ -580,19 +613,29 @@ func _refresh_inventory_ui() -> void:
 	for child in recipes_list.get_children():
 		child.queue_free()
 
-	var item_ids: Array = placeable_blocks.duplicate() if game_mode == MODE_CREATIVE else player_inventory.copy_items().keys()
-	item_ids.sort()
-	if item_ids.is_empty():
-		var empty_slot = BlockForgeInventorySlotScript.new()
-		empty_slot.setup("Vide", 0, null, "", false)
-		inventory_grid.add_child(empty_slot)
-	else:
+	if game_mode == MODE_CREATIVE:
+		var item_ids: Array = placeable_blocks.duplicate()
+		item_ids.sort()
 		for id in item_ids:
 			var block_id := String(id)
-			var amount: int = player_inventory.count(block_id) if game_mode == MODE_SURVIVAL else 0
 			var slot = BlockForgeInventorySlotScript.new()
-			slot.setup(_block_name(block_id), amount, _block_icon_texture(block_id), block_id, false)
+			slot.setup(_block_name(block_id), 0, _block_icon_texture(block_id), block_id, false)
 			slot.pressed.connect(_assign_hotbar_from_inventory)
+			inventory_grid.add_child(slot)
+	else:
+		var inventory_slots: Array = player_inventory.get_slots()
+		for slot_index in range(inventory_slots.size()):
+			var stack: Dictionary = inventory_slots[slot_index]
+			var block_id: String = String(stack.get("id", ""))
+			var amount: int = int(stack.get("amount", 0))
+			var slot = BlockForgeInventorySlotScript.new()
+			if block_id == "" or amount <= 0:
+				slot.setup("Vide", 0, null, "", false, slot_index)
+			else:
+				slot.setup(_block_name(block_id), amount, _block_icon_texture(block_id), block_id, false, slot_index)
+				slot.pressed.connect(_assign_hotbar_from_inventory)
+				slot.drop_requested.connect(_drop_inventory_item)
+				slot.destroy_requested.connect(_destroy_inventory_stack)
 			inventory_grid.add_child(slot)
 
 	for recipe in crafting_book.get_recipes():
@@ -644,10 +687,46 @@ func _select_inventory_hotbar_slot(index: int) -> void:
 
 
 func _craft_recipe(recipe: Dictionary) -> void:
-	if crafting_book.craft(recipe, player_inventory):
+	var output: Dictionary = recipe.get("output", {})
+	if not crafting_book.can_craft(recipe, player_inventory):
+		message = "Il manque des matériaux."
+	elif not player_inventory.can_receive(output):
+		message = "Inventaire plein."
+	elif crafting_book.craft(recipe, player_inventory):
 		message = "Craft réussi: %s." % String(recipe.get("name", recipe.get("id", "recette")))
 	else:
-		message = "Il manque des matériaux."
+		message = "Craft impossible."
+	_refresh_inventory_ui()
+	_rebuild_hotbar()
+	_update_hud()
+
+
+func _drop_inventory_item(item_id: String, slot_index: int = -1) -> void:
+	if game_mode != MODE_SURVIVAL or item_id == "":
+		return
+	var removed: int = player_inventory.remove_from_slot(slot_index, item_id, 1)
+	if removed <= 0 and slot_index < 0 and player_inventory.remove_item(item_id, 1):
+		removed = 1
+	if removed <= 0:
+		return
+	var forward := -camera.global_transform.basis.z
+	var origin := camera.global_position + forward * 1.1 - Vector3(0, EYE_HEIGHT - 0.75, 0)
+	_spawn_item_drop(item_id, removed, origin)
+	message = "%s jeté." % _block_name(item_id)
+	_refresh_inventory_ui()
+	_rebuild_hotbar()
+	_update_hud()
+
+
+func _destroy_inventory_stack(item_id: String, slot_index: int = -1) -> void:
+	if game_mode != MODE_SURVIVAL or item_id == "":
+		return
+	var removed: int = player_inventory.remove_stack_from_slot(slot_index, item_id)
+	if removed <= 0 and slot_index < 0:
+		removed = player_inventory.remove_one_stack(item_id)
+	if removed <= 0:
+		return
+	message = "%s détruit x%d." % [_block_name(item_id), removed]
 	_refresh_inventory_ui()
 	_rebuild_hotbar()
 	_update_hud()
@@ -723,7 +802,9 @@ func _create_chunk_generation_job(chunk_key: String) -> Dictionary:
 		"tree_spots": [],
 		"min_y": int(worldgen.get("minHeight", -16)),
 		"water_level": int(worldgen.get("waterLevel", 8)),
-		"water_enabled": bool(worldgen.get("waterEnabled", false))
+		"water_enabled": bool(worldgen.get("waterEnabled", false)),
+		"ore_chance": float(worldgen.get("oreChance", 0.016)),
+		"cave_chance": float(worldgen.get("caveChance", 0.14))
 	}
 
 
@@ -742,14 +823,22 @@ func _process_chunk_generation_job(job: Dictionary, max_columns: int) -> bool:
 		job["x"] = x
 		job["z"] = z
 		if x > int(job["max_x"]):
-			bulk_world_update = false
 			var chunk_key := String(job["chunk_key"])
 			var tree_spots: Array = job["tree_spots"]
+			var tree_chunk_keys: Dictionary = {}
 			for i in range(tree_spots.size()):
 				var spot: Vector3i = tree_spots[i]
-				_grow_tree(spot.x, spot.y, spot.z)
+				var touched_chunks: Dictionary = _grow_tree(spot.x, spot.y, spot.z)
+				for touched_key in touched_chunks.keys():
+					tree_chunk_keys[String(touched_key)] = true
 			generated_chunk_keys[chunk_key] = true
-			_rebuild_visible_block_cache(chunk_key)
+			_invalidate_visible_block_cache(chunk_key)
+			for touched_key in tree_chunk_keys.keys():
+				var touched_chunk_key := String(touched_key)
+				_invalidate_visible_block_cache(touched_chunk_key)
+				if touched_chunk_key != chunk_key and generated_chunk_keys.has(touched_chunk_key) and visible_chunk_keys.has(touched_chunk_key):
+					_queue_chunk_rebuild(touched_chunk_key)
+			bulk_world_update = false
 			job.clear()
 			return true
 	bulk_world_update = false
@@ -761,14 +850,17 @@ func _generate_chunk_column(job: Dictionary, x: int, z: int) -> void:
 	var min_y := int(job["min_y"])
 	var water_level := int(job["water_level"])
 	var water_enabled := bool(job["water_enabled"])
+	var ore_chance := float(job["ore_chance"])
+	var cave_chance := float(job["cave_chance"])
+	var chunk_key := String(job["chunk_key"])
 	for y in range(min_y, height + 1):
-		if _is_cave_air(x, y, z, height):
+		if _is_cave_air_fast(x, y, z, height, min_y, cave_chance):
 			continue
-		_set_block(x, y, z, _natural_block_id(x, y, z, height, water_level))
+		_set_generated_block(x, y, z, _natural_block_id_fast(x, y, z, height, water_level, min_y, ore_chance), chunk_key)
 
 	if water_enabled and height < water_level:
 		for y in range(height + 1, water_level + 1):
-			_set_block(x, y, z, "water")
+			_set_generated_block(x, y, z, "water", chunk_key)
 
 	if height > water_level + 2 and (abs(x) > 8 or abs(z) > 8) and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < float(worldgen.get("treeChance", 0.006)):
 		var tree_spots: Array = job["tree_spots"]
@@ -798,6 +890,10 @@ func _terrain_height(x: int, z: int) -> int:
 
 
 func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) -> String:
+	return _natural_block_id_fast(x, y, z, height, water_level, int(worldgen.get("minHeight", -16)), float(worldgen.get("oreChance", 0.016)))
+
+
+func _natural_block_id_fast(x: int, y: int, z: int, height: int, water_level: int, min_y: int, ore_chance: float) -> String:
 	if y == height:
 		if height <= water_level + 1:
 			return "sand" if VoxelMathScript.hash2(x, z, world_seed + 41) > 0.18 else "clay"
@@ -806,10 +902,10 @@ func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) ->
 		if height <= water_level + 2:
 			return "sand" if VoxelMathScript.hash3(x, y, z, world_seed + 82) > 0.18 else "clay"
 		return "dirt"
-	var ore := _ore_block_id(x, y, z)
+	var ore := _ore_block_id_fast(x, y, z, ore_chance)
 	if ore != "":
 		return ore
-	if y < int(worldgen.get("minHeight", -16)) + 7 and VoxelMathScript.hash3(x, y, z, world_seed + 17) < 0.34:
+	if y < min_y + 7 and VoxelMathScript.hash3(x, y, z, world_seed + 17) < 0.34:
 		return "granite"
 	if VoxelMathScript.hash3(x, y, z, world_seed + 99) < 0.018:
 		return "marble"
@@ -818,6 +914,10 @@ func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) ->
 
 func _ore_block_id(x: int, y: int, z: int) -> String:
 	var chance := float(worldgen.get("oreChance", 0.016))
+	return _ore_block_id_fast(x, y, z, chance)
+
+
+func _ore_block_id_fast(x: int, y: int, z: int, chance: float) -> String:
 	var roll := VoxelMathScript.hash3(x, y, z, world_seed + 301)
 	if y < 8 and roll < chance * 0.45:
 		return "iron_ore"
@@ -828,9 +928,13 @@ func _ore_block_id(x: int, y: int, z: int) -> String:
 
 func _is_cave_air(x: int, y: int, z: int, surface_y: int) -> bool:
 	var min_y := int(worldgen.get("minHeight", -16))
+	var cave_chance := float(worldgen.get("caveChance", 0.14))
+	return _is_cave_air_fast(x, y, z, surface_y, min_y, cave_chance)
+
+
+func _is_cave_air_fast(x: int, y: int, z: int, surface_y: int, min_y: int, cave_chance: float) -> bool:
 	if y <= min_y + 2 or y >= surface_y - 4:
 		return false
-	var cave_chance := float(worldgen.get("caveChance", 0.14))
 	var tunnel := VoxelMathScript.value_noise(x * 0.095 + 7.0, z * 0.095 - 11.0, world_seed + y * 13)
 	var pocket := VoxelMathScript.value_noise((x + y) * 0.055, (z - y) * 0.055, world_seed + 511)
 	var depth_bonus := clampf(float(surface_y - y) / 38.0, 0.0, 0.18)
@@ -856,10 +960,13 @@ func _add_showcase_details() -> void:
 		_grow_tree(spot.x, ground_y + 1, spot.y)
 
 
-func _grow_tree(x: int, y: int, z: int) -> void:
+func _grow_tree(x: int, y: int, z: int) -> Dictionary:
+	var touched_chunks: Dictionary = {}
 	var height := 4 + int(VoxelMathScript.hash2(x, z, world_seed + 77) * 3.0)
 	for i in range(height):
-		_set_block(x, y + i, z, "log")
+		var log_pos := Vector3i(x, y + i, z)
+		_set_block(log_pos.x, log_pos.y, log_pos.z, "log")
+		touched_chunks[VoxelMathScript.chunk_key_for_block(log_pos, CHUNK_SIZE)] = true
 	var crown_y := y + height
 	for ox in range(-2, 3):
 		for oy in range(-2, 2):
@@ -867,7 +974,10 @@ func _grow_tree(x: int, y: int, z: int) -> void:
 				var distance: float = abs(ox) + abs(oy) * 0.8 + abs(oz)
 				if distance < 4.1 and VoxelMathScript.hash3(x + ox, crown_y + oy, z + oz, world_seed) > 0.13:
 					if _get_block(x + ox, crown_y + oy, z + oz) == "":
-						_set_block(x + ox, crown_y + oy, z + oz, "leaves")
+						var leaf_pos := Vector3i(x + ox, crown_y + oy, z + oz)
+						_set_block(leaf_pos.x, leaf_pos.y, leaf_pos.z, "leaves")
+						touched_chunks[VoxelMathScript.chunk_key_for_block(leaf_pos, CHUNK_SIZE)] = true
+	return touched_chunks
 
 
 func _clear_spawn_area() -> void:
@@ -927,17 +1037,29 @@ func _desired_chunk_keys(center: Vector2i, extra_distance: int = 0) -> Dictionar
 
 
 func _rebuild_nearby_chunks(pos: Vector3i) -> void:
-	var chunks_to_build := {}
-	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos, CHUNK_SIZE)] = true
-	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.RIGHT, CHUNK_SIZE)] = true
-	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.LEFT, CHUNK_SIZE)] = true
-	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.FORWARD, CHUNK_SIZE)] = true
-	chunks_to_build[VoxelMathScript.chunk_key_for_block(pos + Vector3i.BACK, CHUNK_SIZE)] = true
+	var chunks_to_build := _affected_chunk_keys_for_block(pos)
 	for chunk_key in chunks_to_build.keys():
 		if visible_chunk_keys.has(chunk_key):
 			_queue_chunk_rebuild(chunk_key, true)
 	_mark_target_dirty()
 	_update_hud()
+
+
+func _affected_chunk_keys_for_block(pos: Vector3i) -> Dictionary:
+	var chunks := {}
+	var current := VoxelMathScript.chunk_key_for_block(pos, CHUNK_SIZE)
+	chunks[current] = true
+	var local_x := posmod(pos.x, CHUNK_SIZE)
+	var local_z := posmod(pos.z, CHUNK_SIZE)
+	if local_x == 0:
+		chunks[VoxelMathScript.chunk_key_for_block(pos + Vector3i.LEFT, CHUNK_SIZE)] = true
+	elif local_x == CHUNK_SIZE - 1:
+		chunks[VoxelMathScript.chunk_key_for_block(pos + Vector3i.RIGHT, CHUNK_SIZE)] = true
+	if local_z == 0:
+		chunks[VoxelMathScript.chunk_key_for_block(pos + Vector3i.FORWARD, CHUNK_SIZE)] = true
+	elif local_z == CHUNK_SIZE - 1:
+		chunks[VoxelMathScript.chunk_key_for_block(pos + Vector3i.BACK, CHUNK_SIZE)] = true
+	return chunks
 
 
 func _clear_chunk_meshes(chunk_key: String, forget_visible: bool = true) -> void:
@@ -978,7 +1100,8 @@ func _queue_chunk_generation(chunk_key: String) -> void:
 
 func _process_chunk_generation_queue(max_count: int) -> void:
 	var finished := 0
-	while finished < max_count:
+	var started_at := Time.get_ticks_usec()
+	while finished < max_count and Time.get_ticks_usec() - started_at < CHUNK_GENERATION_BUDGET_USEC:
 		if active_chunk_generation.is_empty():
 			if chunk_generation_queue.is_empty():
 				return
@@ -1000,7 +1123,8 @@ func _process_chunk_generation_queue(max_count: int) -> void:
 
 func _process_chunk_rebuild_queue(max_count: int) -> void:
 	var built := 0
-	while built < max_count and not chunk_rebuild_queue.is_empty():
+	var started_at := Time.get_ticks_usec()
+	while built < max_count and not chunk_rebuild_queue.is_empty() and Time.get_ticks_usec() - started_at < CHUNK_REBUILD_BUDGET_USEC:
 		var chunk_key := String(chunk_rebuild_queue.pop_front())
 		queued_chunk_rebuilds.erase(chunk_key)
 		if not visible_chunk_keys.has(chunk_key):
@@ -1022,11 +1146,9 @@ func _rebuild_chunk(chunk_key: String) -> void:
 		var p := _parse_key(key)
 		if not blocks.has(id):
 			continue
-		var block: Dictionary = blocks[id]
 		for face in range(6):
-			var d := VoxelMathScript.face_dir(face)
+			var d: Vector3i = NEIGHBOR_DIRS[face]
 			var neighbor_id := _get_block(p.x + d.x, p.y + d.y, p.z + d.z)
-			var neighbor: Dictionary = blocks.get(neighbor_id, {})
 			if _should_render_face(id, neighbor_id, face):
 				_append_face(face_groups, id, face, p)
 
@@ -1076,8 +1198,8 @@ func _append_face(face_groups: Dictionary, id: String, face: int, pos: Vector3i)
 	var uvs: PackedVector2Array = group["uvs"]
 	var indices: PackedInt32Array = group["indices"]
 	var base_index := vertices.size()
-	var normal := Vector3(VoxelMathScript.face_dir(face))
-	var corners := VoxelMathScript.face_vertices(face)
+	var normal := Vector3(NEIGHBOR_DIRS[face])
+	var corners: Array = FACE_CORNERS[face]
 	var offset := Vector3(pos)
 
 	for corner in corners:
@@ -1115,12 +1237,9 @@ func _should_render_face(id: String, neighbor_id: String, face: int) -> bool:
 
 
 func _is_visible_block(x: int, y: int, z: int, id: String) -> bool:
-	var block: Dictionary = blocks.get(id, {})
-	var dirs := [Vector3i.RIGHT, Vector3i.LEFT, Vector3i.UP, Vector3i.DOWN, Vector3i.FORWARD, Vector3i.BACK]
-	for face in range(dirs.size()):
-		var d: Vector3i = dirs[face]
+	for face in range(NEIGHBOR_DIRS.size()):
+		var d: Vector3i = NEIGHBOR_DIRS[face]
 		var neighbor_id := _get_block(x + d.x, y + d.y, z + d.z)
-		var neighbor: Dictionary = blocks.get(neighbor_id, {})
 		if _should_render_face(id, neighbor_id, face):
 			return true
 	return false
@@ -1145,6 +1264,10 @@ func _rebuild_visible_block_cache(chunk_key: String) -> void:
 		chunk_visible_blocks.erase(chunk_key)
 	else:
 		chunk_visible_blocks[chunk_key] = visible
+
+
+func _invalidate_visible_block_cache(chunk_key: String) -> void:
+	chunk_visible_blocks.erase(chunk_key)
 
 
 func _refresh_visibility_around(pos: Vector3i) -> void:
@@ -1315,13 +1438,15 @@ func _respawn_after_death() -> void:
 func _drop_inventory_on_death() -> void:
 	var origin := camera.position - Vector3(0, EYE_HEIGHT - 0.5, 0)
 	var index := 0
-	for id in player_inventory.copy_items().keys():
-		var amount: int = player_inventory.count(String(id))
+	for stack_data in player_inventory.get_filled_stacks():
+		var stack: Dictionary = stack_data
+		var id: String = String(stack.get("id", ""))
+		var amount: int = int(stack.get("amount", 0))
 		if amount <= 0:
 			continue
 		var angle := float(index) * 0.83
 		var offset := Vector3(cos(angle), 0.0, sin(angle)) * (0.7 + float(index % 3) * 0.25)
-		_spawn_item_drop(String(id), amount, origin + offset)
+		_spawn_item_drop(id, amount, origin + offset)
 		index += 1
 
 
@@ -1357,19 +1482,29 @@ func _item_drop_material(id: String) -> Material:
 func _update_dropped_items(delta: float) -> void:
 	if dropped_items_parent == null:
 		return
+	var now_msec := Time.get_ticks_msec()
+	var pickup_distance_sq := 1.45 * 1.45
+	var player_pos := camera.global_position
 	for item in dropped_items_parent.get_children():
 		if not is_instance_valid(item):
 			continue
 		item.rotation_degrees.y += delta * 80.0
 		var base_y := float(item.get_meta("base_y", item.position.y))
 		var phase := float(item.get_meta("phase", 0.0))
-		item.position.y = base_y + sin(Time.get_ticks_msec() * 0.004 + phase) * 0.08
-		if item.global_position.distance_to(camera.global_position) < 1.45:
+		item.position.y = base_y + sin(now_msec * 0.004 + phase) * 0.08
+		if item.global_position.distance_squared_to(player_pos) < pickup_distance_sq:
 			var id := String(item.get_meta("item_id", ""))
 			var amount := int(item.get_meta("amount", 1))
-			player_inventory.add_item(id, amount)
-			message = "Ramassé: %s x%d." % [_block_name(id), amount]
-			item.queue_free()
+			var leftover: int = player_inventory.add_item(id, amount)
+			var picked: int = amount - leftover
+			if picked <= 0:
+				continue
+			message = "Ramassé: %s x%d." % [_block_name(id), picked]
+			if leftover > 0:
+				item.set_meta("amount", leftover)
+				item.name = "Drop_%s_%d" % [id, leftover]
+			else:
+				item.queue_free()
 			_refresh_inventory_if_open()
 			_rebuild_hotbar()
 			_update_hud()
@@ -1419,24 +1554,50 @@ func _update_target() -> void:
 func _voxel_raycast(max_distance: float):
 	var origin := camera.global_position
 	var direction := -camera.global_transform.basis.z.normalized()
-	var previous = null
-	var distance: float = 0.08
-	while distance <= max_distance:
-		var sample := origin + direction * distance
-		var pos := Vector3i(floori(sample.x + 0.5), floori(sample.y + 0.5), floori(sample.z + 0.5))
-		if previous != null and previous == pos:
-			distance += TARGET_RAY_STEP
-			continue
+	var shifted_origin := origin + Vector3(0.5, 0.5, 0.5)
+	var pos := Vector3i(floori(shifted_origin.x), floori(shifted_origin.y), floori(shifted_origin.z))
+	var step := Vector3i(
+		1 if direction.x > 0.0 else -1,
+		1 if direction.y > 0.0 else -1,
+		1 if direction.z > 0.0 else -1
+	)
+	var t_delta := Vector3(
+		absf(1.0 / direction.x) if absf(direction.x) > 0.0001 else 999999.0,
+		absf(1.0 / direction.y) if absf(direction.y) > 0.0001 else 999999.0,
+		absf(1.0 / direction.z) if absf(direction.z) > 0.0001 else 999999.0
+	)
+	var next_boundary := Vector3(
+		float(pos.x + 1) if step.x > 0 else float(pos.x),
+		float(pos.y + 1) if step.y > 0 else float(pos.y),
+		float(pos.z + 1) if step.z > 0 else float(pos.z)
+	)
+	var t_max := Vector3(
+		(next_boundary.x - shifted_origin.x) / direction.x if absf(direction.x) > 0.0001 else 999999.0,
+		(next_boundary.y - shifted_origin.y) / direction.y if absf(direction.y) > 0.0001 else 999999.0,
+		(next_boundary.z - shifted_origin.z) / direction.z if absf(direction.z) > 0.0001 else 999999.0
+	)
+	var travelled := 0.0
+	var previous := pos
+	while travelled <= max_distance:
 		var id := _get_block(pos.x, pos.y, pos.z)
 		if id != "" and not bool(blocks.get(id, {}).get("liquid", false)):
-			var normal := Vector3i.ZERO
-			if previous != null:
-				normal = previous - pos
-			else:
+			var normal := previous - pos
+			if normal == Vector3i.ZERO:
 				normal = _fallback_normal(direction)
 			return {"id": id, "pos": pos, "normal": normal}
 		previous = pos
-		distance += TARGET_RAY_STEP
+		if t_max.x <= t_max.y and t_max.x <= t_max.z:
+			pos.x += step.x
+			travelled = t_max.x
+			t_max.x += t_delta.x
+		elif t_max.y <= t_max.z:
+			pos.y += step.y
+			travelled = t_max.y
+			t_max.y += t_delta.y
+		else:
+			pos.z += step.z
+			travelled = t_max.z
+			t_max.z += t_delta.z
 	return null
 
 
@@ -1471,10 +1632,17 @@ func _break_target() -> void:
 	_set_block(pos.x, pos.y, pos.z, "")
 	block_action_timer = BLOCK_ACTION_COOLDOWN
 	if game_mode == MODE_SURVIVAL:
-		player_inventory.add_item(drop_id, 1)
+		var leftover: int = player_inventory.add_item(drop_id, 1)
+		if leftover > 0:
+			var drop_position := Vector3(float(pos.x) + 0.5, float(pos.y) + 0.65, float(pos.z) + 0.5)
+			_spawn_item_drop(drop_id, leftover, drop_position)
+			message = "Inventaire plein: %s tombe au sol." % _block_name(drop_id)
+		else:
+			message = "%s récupéré." % _block_name(drop_id)
 		_rebuild_hotbar()
+	else:
+		message = "%s récupéré." % _block_name(drop_id)
 	_play_sfx("break")
-	message = "%s récupéré." % _block_name(drop_id)
 	_rebuild_nearby_chunks(pos)
 	_mark_target_dirty()
 	_refresh_inventory_if_open()
@@ -1762,15 +1930,7 @@ func _on_hotbar_slot_input(event: InputEvent, index: int) -> void:
 
 
 func _apply_hotbar_style(slot: PanelContainer, selected: bool) -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.17, 0.19, 0.18, 0.92) if selected else Color(0.06, 0.07, 0.08, 0.84)
-	style.border_color = Color(1.0, 0.88, 0.34, 0.95) if selected else Color(0.35, 0.40, 0.40, 0.78)
-	style.set_border_width_all(2 if selected else 1)
-	style.corner_radius_top_left = 4
-	style.corner_radius_top_right = 4
-	style.corner_radius_bottom_left = 4
-	style.corner_radius_bottom_right = 4
-	slot.add_theme_stylebox_override("panel", style)
+	slot.add_theme_stylebox_override("panel", hotbar_selected_style if selected else hotbar_normal_style)
 
 
 func _update_hud() -> void:
@@ -1825,6 +1985,14 @@ func _health_bar_text() -> String:
 
 func _play_sfx(id: String) -> void:
 	audio_library.play_sfx(id)
+
+
+func _set_generated_block(x: int, y: int, z: int, id: String, chunk_key: String) -> void:
+	var key := _block_key(x, y, z)
+	world[key] = id
+	if not chunk_blocks.has(chunk_key):
+		chunk_blocks[chunk_key] = {}
+	chunk_blocks[chunk_key][key] = true
 
 
 func _set_block(x: int, y: int, z: int, id: String) -> void:

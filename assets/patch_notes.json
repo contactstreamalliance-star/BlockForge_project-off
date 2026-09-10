@@ -1,6 +1,81 @@
 {
   "updates": [
     {
+      "version": "0.3.11-godot",
+      "title": "Correctif anti-freeze des arbres",
+      "date": "2026-09-10",
+      "description": "Le correctif des feuilles invisibles est rendu plus léger pour éviter les freezes pendant la génération des arbres.",
+      "added": [
+        "Invalidation légère du cache de visibilité des chunks touchés par les arbres."
+      ],
+      "changed": [
+        "Les arbres sont générés en mode lot sans recalculer la visibilité autour de chaque feuille.",
+        "Les chunks touchés par les feuilles sont maintenant reconstruits par la file normale au lieu d'être recalculés immédiatement.",
+        "La correction des feuilles invisibles garde l'affichage correct sans bloquer la génération."
+      ],
+      "removed": [
+        "Recalcul immédiat du cache visible de tous les chunks touchés par un arbre."
+      ]
+    },
+    {
+      "version": "0.3.10-godot",
+      "title": "Correction des feuilles invisibles",
+      "date": "2026-09-10",
+      "description": "Correction d'un bug où certaines feuilles d'arbres restaient invisibles jusqu'à ce qu'un bloc proche soit cassé.",
+      "added": [
+        "Suivi des chunks touchés par chaque arbre pendant la génération."
+      ],
+      "changed": [
+        "Quand un arbre déborde dans un chunk voisin déjà affiché, ce chunk est maintenant recalculé automatiquement.",
+        "Le cache de visibilité des feuilles est reconstruit pour tous les chunks réellement modifiés par l'arbre."
+      ],
+      "removed": [
+        "Dépendance au cassage d'un bloc pour forcer l'affichage de certaines feuilles."
+      ]
+    },
+    {
+      "version": "0.3.9-godot",
+      "title": "Inventaire limité et piles de 64",
+      "date": "2026-09-10",
+      "description": "L'inventaire de survie devient un vrai stockage limité avec piles, objets jetables et protection contre les pertes quand il est plein.",
+      "added": [
+        "36 cases d'inventaire en mode survie.",
+        "Piles limitées à 64 unités par objet ou bloc.",
+        "Clic droit dans l'inventaire pour jeter 1 objet au sol.",
+        "Maj + clic droit dans l'inventaire pour détruire une pile.",
+        "Les objets au sol restent au sol si l'inventaire est plein."
+      ],
+      "changed": [
+        "L'inventaire n'est plus un compteur illimité par type d'objet.",
+        "Le craft vérifie maintenant que les objets fabriqués peuvent entrer dans l'inventaire avant de consommer les matériaux.",
+        "À la mort, les objets tombent au sol pile par pile."
+      ],
+      "removed": [
+        "Stockage de survie illimité."
+      ]
+    },
+    {
+      "version": "0.3.8-godot",
+      "title": "Optimisation globale anti-freeze",
+      "date": "2026-09-10",
+      "description": "Nouvelle passe d'optimisation centrée sur les freezes de génération, de reconstruction de chunks et de spam clic.",
+      "added": [
+        "Budget de temps par frame pour la génération et la reconstruction des chunks.",
+        "Raycast voxel direct pour viser les blocs avec beaucoup moins de tests.",
+        "Cache des coins de faces et des styles de barre rapide."
+      ],
+      "changed": [
+        "La génération de chunks relit moins souvent les réglages du monde.",
+        "Le cassage et la pose reconstruisent seulement les chunks réellement touchés.",
+        "Les objets au sol utilisent moins de calculs de distance et de temps.",
+        "La reconstruction de mesh évite plusieurs allocations répétées."
+      ],
+      "removed": [
+        "Reconstruction systématique des quatre chunks voisins quand le bloc modifié n'est pas sur une bordure.",
+        "Raycast par petits pas répétés pour la sélection de blocs."
+      ]
+    },
+    {
       "version": "0.3.7-godot",
       "title": "Textures dans l'inventaire et barre rapide modifiable",
       "date": "2026-09-10",

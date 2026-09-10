@@ -25,9 +25,12 @@ func can_craft(recipe: Dictionary, inventory) -> bool:
 func craft(recipe: Dictionary, inventory) -> bool:
 	var input: Dictionary = recipe.get("input", {})
 	var output: Dictionary = recipe.get("output", {})
+	if not inventory.can_receive(output):
+		return false
 	if not inventory.pay(input):
 		return false
 	for id in output.keys():
-		inventory.add_item(String(id), int(output[id]))
+		var leftover: int = inventory.add_item(String(id), int(output[id]))
+		if leftover > 0:
+			return false
 	return true
-

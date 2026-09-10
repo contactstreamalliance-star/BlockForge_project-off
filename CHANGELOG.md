@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.3.11-godot - 2026-09-10
+
+- Reduced freezes caused by the tree-leaf visibility fix.
+- Tree generation now keeps bulk updates enabled while logs and leaves are placed.
+- Tree-touched chunks now invalidate their visible-block cache instead of rebuilding it immediately.
+- Neighbor chunks touched by tree leaves are rebuilt through the normal chunk rebuild queue.
+
+## 0.3.10-godot - 2026-09-10
+
+- Fixed tree leaves that could stay invisible until a nearby block was broken.
+- Tree generation now tracks every touched chunk, including neighboring chunks.
+- Visible-block caches are refreshed for all chunks modified by a generated tree.
+- Already displayed neighboring chunks are queued for rebuild when tree leaves spill across chunk borders.
+
+## 0.3.9-godot - 2026-09-10
+
+- Reworked survival inventory into 36 fixed slots.
+- Added 64-unit stacks for blocks and items.
+- Added right-click inventory dropping for one item at a time.
+- Added Shift + right-click inventory destruction for a full stack.
+- Crafting now checks output space before consuming ingredients.
+- Dropped items now stay on the ground when the inventory is full.
+- Death drops now preserve separate inventory stacks.
+
+## 0.3.8-godot - 2026-09-10
+
+- Added per-frame time budgets for chunk generation and chunk rebuild work.
+- Replaced step-based block targeting with direct voxel traversal.
+- Reduced block spam cost by rebuilding neighboring chunks only when the edited block touches a chunk border.
+- Reduced repeated worldgen config reads during terrain generation.
+- Cached face corner data and hotbar styles to cut repeated allocations.
+- Reduced dropped item update cost by reusing frame time and squared distance checks.
+
 ## 0.3.7-godot - 2026-09-10
 
 - Replaced text-heavy inventory and hotbar slots with texture icons.
