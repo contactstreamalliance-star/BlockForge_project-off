@@ -26,3 +26,6 @@ exports/
 
 # Accidental duplicate documents
 * (2).md
+
+# External Godot asset packs kept outside the active game code
+/Godot-Inventory-*/

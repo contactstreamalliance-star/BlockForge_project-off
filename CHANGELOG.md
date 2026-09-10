@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.7-godot - 2026-09-10
+
+- Replaced text-heavy inventory and hotbar slots with texture icons.
+- Added an editable hotbar row inside the inventory screen.
+- Added click-to-assign behavior: select a hotbar slot, then click an inventory block texture.
+- Creative mode inventory now shows placeable blocks so the hotbar can be customized without gathering resources first.
+
+## 0.3.6-godot - 2026-09-10
+
+- Used the added inventory asset as a safe reference instead of importing its broken dependencies into the active Godot project.
+- Added visual inventory slots with block icons, item counts and hover feedback.
+- Added scrollable inventory and crafting panels so more items and recipes fit cleanly.
+- Kept the external asset pack outside the active project to prevent Godot parse errors.
+
 ## 0.3.5-godot - 2026-09-10
 
 - Regrouped all optimization notes into one entry.
@@ -16,12 +30,12 @@
 - Added inventory, craft recipes, health, fall damage, Game Over and respawn flow.
 - Added dropped item pickups after death.
 - Added granite, clay, coal ore, iron ore, coal, raw iron and workbench data/textures.
-- Added `scripts/systems/player_inventory.gd` and `scripts/systems/crafting_book.gd`.
+- Added `src/systems/player_inventory.gd` and `src/systems/crafting_book.gd`.
 - Kept chunked visible-face rendering active; smoke test generated about 162k blocks and 95k visible faces without script errors.
 
 ## 0.2.4-godot - 2026-09-07
 
-- Split reusable code out of `scripts/main.gd` into focused files under `scripts/ui`, `scripts/systems`, `scripts/utils` and `scripts/world`.
+- Split reusable code out of `src/main.gd` into focused files under `src/ui`, `src/systems`, `src/utils` and `src/world`.
 - Added `PatchNotesPanel`, `AudioLibrary`, `TextureCache`, `BlockMaterialFactory` and `SelectionOutline` scripts.
 - Removed old unused helper code from `main.gd`.
 - Added architecture documentation for future contributors.

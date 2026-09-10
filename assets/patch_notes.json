@@ -1,6 +1,45 @@
 {
   "updates": [
     {
+      "version": "0.3.7-godot",
+      "title": "Textures dans l'inventaire et barre rapide modifiable",
+      "date": "2026-09-10",
+      "description": "L'inventaire et la barre rapide utilisent maintenant les textures des blocs au lieu d'afficher surtout leurs noms.",
+      "added": [
+        "Icônes de textures dans la barre rapide.",
+        "Mini barre rapide dans l'inventaire pour choisir la case à modifier.",
+        "Clic sur une texture d'inventaire pour l'envoyer dans la case rapide sélectionnée.",
+        "Affichage des blocs posables en mode créatif pour personnaliser la barre rapide facilement."
+      ],
+      "changed": [
+        "Les noms des blocs ne sont plus affichés directement dans les cases d'inventaire.",
+        "Les noms restent disponibles au survol pour garder l'interface lisible.",
+        "Les touches 1 à 9 sélectionnent aussi la case à modifier quand l'inventaire est ouvert."
+      ],
+      "removed": [
+        "Ancienne barre rapide principalement basée sur du texte."
+      ]
+    },
+    {
+      "version": "0.3.6-godot",
+      "title": "Inventaire visuel et asset sécurisé",
+      "date": "2026-09-10",
+      "description": "Utilisation prudente de l'asset d'inventaire ajouté comme inspiration, sans importer son système complet qui bloquait Godot.",
+      "added": [
+        "Nouvelles cases d'inventaire avec icône, quantité et survol.",
+        "Grille d'inventaire défilable pour accueillir plus d'objets sans déborder.",
+        "Liste de craft défilable avec cartes plus lisibles."
+      ],
+      "changed": [
+        "L'inventaire n'est plus une simple liste texte.",
+        "Les icônes utilisent directement les textures des blocs déjà présents dans le jeu.",
+        "Le pack d'inventaire externe est gardé hors du projet actif pour éviter ses erreurs de dépendances."
+      ],
+      "removed": [
+        "Import direct du pack Godot-Inventory dans le projet actif."
+      ]
+    },
+    {
       "version": "0.3.5-godot",
       "title": "Optimisations regroupées",
       "date": "2026-09-10",

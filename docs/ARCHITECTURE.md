@@ -4,16 +4,16 @@ BlockForge Alpha is kept intentionally simple for early contributors. Most gamep
 
 ## Main Flow
 
-`scripts/main.gd` is the coordinator. It starts Godot nodes, loads data, creates the world, handles player input, updates the HUD, and asks smaller modules to do focused jobs.
+`src/main.gd` is the coordinator. It starts Godot nodes, loads data, creates the world, handles player input, updates the HUD, and asks smaller modules to do focused jobs.
 
 Avoid putting every new feature in `main.gd`. If a feature can live on its own, create or extend a file in one of the folders below.
 
 ## Folders
 
-- `scripts/ui/`: menu screens, HUD panels, patch notes, future inventory/crafting screens.
-- `scripts/systems/`: reusable systems that are not tied to one block or one UI screen, such as audio, saving, local settings and future mod support.
-- `scripts/utils/`: small helpers, caches, file loaders and generic utilities.
-- `scripts/world/`: voxel rendering, block materials, world generation helpers, chunk helpers and selection visuals.
+- `src/ui/`: menu screens, HUD panels, patch notes, future inventory/crafting screens.
+- `src/systems/`: reusable systems that are not tied to one block or one UI screen, such as audio, saving, local settings and future mod support.
+- `src/utils/`: small helpers, caches, file loaders and generic utilities.
+- `src/world/`: voxel rendering, block materials, world generation helpers, chunk helpers and selection visuals.
 
 ## Editable Data
 
@@ -25,15 +25,15 @@ Avoid putting every new feature in `main.gd`. If a feature can live on its own, 
 
 ## Current Scripts
 
-- `scripts/main.gd`: game coordinator, player movement, world dictionary, chunk rebuild calls.
-- `scripts/systems/player_inventory.gd`: stores and spends collected items.
-- `scripts/systems/crafting_book.gd`: loads `assets/recipes.json` and applies craft results.
-- `scripts/ui/patch_notes_controller.gd`: loads Patch Notes data and controls opening/closing.
-- `scripts/ui/patch_notes_panel.gd`: builds and displays the Patch Notes screen.
-- `scripts/systems/audio_library.gd`: loads and plays WAV sounds/music.
-- `scripts/utils/texture_cache.gd`: loads PNG textures once and reuses them.
-- `scripts/world/block_material_factory.gd`: creates Godot materials for block definitions.
-- `scripts/world/selection_outline.gd`: creates the wireframe outline for the targeted block.
+- `src/main.gd`: game coordinator, player movement, world dictionary, chunk rebuild calls.
+- `src/systems/player_inventory.gd`: stores and spends collected items.
+- `src/systems/crafting_book.gd`: loads `assets/recipes.json` and applies craft results.
+- `src/ui/patch_notes_controller.gd`: loads Patch Notes data and controls opening/closing.
+- `src/ui/patch_notes_panel.gd`: builds and displays the Patch Notes screen.
+- `src/systems/audio_library.gd`: loads and plays WAV sounds/music.
+- `src/utils/texture_cache.gd`: loads PNG textures once and reuses them.
+- `src/world/block_material_factory.gd`: creates Godot materials for block definitions.
+- `src/world/selection_outline.gd`: creates the wireframe outline for the targeted block.
 
 ## Recommended Contribution Style
 

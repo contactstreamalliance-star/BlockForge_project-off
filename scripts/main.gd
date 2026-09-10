@@ -3,7 +3,7 @@ extends Node3D
 const BLOCKS_PATH := "res://assets/blocks.json"
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
-const VERSION_LABEL := "0.3.5"
+const VERSION_LABEL := "0.3.7"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -34,6 +34,7 @@ const FALL_SAFE_HEIGHT := 4.0
 
 const AudioLibraryScript := preload("res://scripts/systems/audio_library.gd")
 const BlockMaterialFactoryScript := preload("res://scripts/world/block_material_factory.gd")
+const BlockForgeInventorySlotScript := preload("res://scripts/ui/blockforge_inventory_slot.gd")
 const CraftingBookScript := preload("res://scripts/systems/crafting_book.gd")
 const PatchNotesControllerScript := preload("res://scripts/ui/patch_notes_controller.gd")
 const PlayerInventoryScript := preload("res://scripts/systems/player_inventory.gd")
@@ -52,7 +53,8 @@ var health_label: Label
 var hotbar_box: HBoxContainer
 var inventory_layer: CanvasLayer
 var inventory_panel: PanelContainer
-var inventory_list: VBoxContainer
+var inventory_hotbar_box: HBoxContainer
+var inventory_grid: GridContainer
 var recipes_list: VBoxContainer
 var game_over_layer: CanvasLayer
 var crosshair: Control
@@ -103,8 +105,11 @@ var target_dirty := true
 var dropped_item_timer := 0.0
 var block_action_timer := 0.0
 var bulk_world_update := false
-var hotbar_labels := []
-var hotbar_last_texts := []
+var hotbar_slots := []
+var hotbar_icons := []
+var hotbar_counts := []
+var hotbar_keys := []
+var hotbar_last_signatures := []
 var last_status_text := ""
 var last_health_text := ""
 var last_debug_text := ""
@@ -416,9 +421,9 @@ func _setup_ui() -> void:
 	hotbar_box.anchor_right = 0.5
 	hotbar_box.anchor_top = 1.0
 	hotbar_box.anchor_bottom = 1.0
-	hotbar_box.offset_left = -250.0
+	hotbar_box.offset_left = -285.0
 	hotbar_box.offset_top = -66.0
-	hotbar_box.offset_right = 250.0
+	hotbar_box.offset_right = 285.0
 	hotbar_box.offset_bottom = -14.0
 	hotbar_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	hotbar_box.add_theme_constant_override("separation", 4)
@@ -457,15 +462,15 @@ func _setup_inventory_ui() -> void:
 	inventory_layer.add_child(root)
 
 	inventory_panel = PanelContainer.new()
-	inventory_panel.custom_minimum_size = Vector2(700, 480)
+	inventory_panel.custom_minimum_size = Vector2(760, 500)
 	root.add_child(inventory_panel)
 
 	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 18)
+	columns.add_theme_constant_override("separation", 22)
 	inventory_panel.add_child(columns)
 
 	var inventory_column := VBoxContainer.new()
-	inventory_column.custom_minimum_size = Vector2(320, 430)
+	inventory_column.custom_minimum_size = Vector2(390, 440)
 	columns.add_child(inventory_column)
 
 	var inventory_title := Label.new()
@@ -473,12 +478,29 @@ func _setup_inventory_ui() -> void:
 	inventory_title.add_theme_font_size_override("font_size", 24)
 	inventory_column.add_child(inventory_title)
 
-	inventory_list = VBoxContainer.new()
-	inventory_list.add_theme_constant_override("separation", 6)
-	inventory_column.add_child(inventory_list)
+	var inventory_hint := Label.new()
+	inventory_hint.text = "1-9 choisit une case. Clique une texture pour modifier la barre rapide."
+	inventory_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	inventory_hint.add_theme_font_size_override("font_size", 13)
+	inventory_column.add_child(inventory_hint)
+
+	inventory_hotbar_box = HBoxContainer.new()
+	inventory_hotbar_box.add_theme_constant_override("separation", 4)
+	inventory_column.add_child(inventory_hotbar_box)
+
+	var inventory_scroll := ScrollContainer.new()
+	inventory_scroll.custom_minimum_size = Vector2(386, 380)
+	inventory_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	inventory_column.add_child(inventory_scroll)
+
+	inventory_grid = GridContainer.new()
+	inventory_grid.columns = 4
+	inventory_grid.add_theme_constant_override("h_separation", 8)
+	inventory_grid.add_theme_constant_override("v_separation", 8)
+	inventory_scroll.add_child(inventory_grid)
 
 	var recipes_column := VBoxContainer.new()
-	recipes_column.custom_minimum_size = Vector2(320, 430)
+	recipes_column.custom_minimum_size = Vector2(320, 440)
 	columns.add_child(recipes_column)
 
 	var recipes_title := Label.new()
@@ -486,9 +508,14 @@ func _setup_inventory_ui() -> void:
 	recipes_title.add_theme_font_size_override("font_size", 24)
 	recipes_column.add_child(recipes_title)
 
+	var recipes_scroll := ScrollContainer.new()
+	recipes_scroll.custom_minimum_size = Vector2(316, 380)
+	recipes_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	recipes_column.add_child(recipes_scroll)
+
 	recipes_list = VBoxContainer.new()
 	recipes_list.add_theme_constant_override("separation", 6)
-	recipes_column.add_child(recipes_list)
+	recipes_scroll.add_child(recipes_list)
 
 
 func _setup_game_over_ui() -> void:
@@ -547,41 +574,73 @@ func _toggle_inventory() -> void:
 
 
 func _refresh_inventory_ui() -> void:
-	for child in inventory_list.get_children():
+	_refresh_inventory_hotbar_editor()
+	for child in inventory_grid.get_children():
 		child.queue_free()
 	for child in recipes_list.get_children():
 		child.queue_free()
 
-	var item_ids: Array = player_inventory.copy_items().keys()
+	var item_ids: Array = placeable_blocks.duplicate() if game_mode == MODE_CREATIVE else player_inventory.copy_items().keys()
 	item_ids.sort()
 	if item_ids.is_empty():
-		var empty := Label.new()
-		empty.text = "Vide"
-		inventory_list.add_child(empty)
+		var empty_slot = BlockForgeInventorySlotScript.new()
+		empty_slot.setup("Vide", 0, null, "", false)
+		inventory_grid.add_child(empty_slot)
 	else:
 		for id in item_ids:
-			var label := Label.new()
-			label.text = "%s x%d" % [_block_name(String(id)), player_inventory.count(String(id))]
-			inventory_list.add_child(label)
+			var block_id := String(id)
+			var amount: int = player_inventory.count(block_id) if game_mode == MODE_SURVIVAL else 0
+			var slot = BlockForgeInventorySlotScript.new()
+			slot.setup(_block_name(block_id), amount, _block_icon_texture(block_id), block_id, false)
+			slot.pressed.connect(_assign_hotbar_from_inventory)
+			inventory_grid.add_child(slot)
 
 	for recipe in crafting_book.get_recipes():
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
+		var row := PanelContainer.new()
+		row.custom_minimum_size = Vector2(300, 78)
+		var box := HBoxContainer.new()
+		box.add_theme_constant_override("separation", 8)
+		row.add_child(box)
 		var button := Button.new()
 		button.text = "Fabriquer"
 		button.disabled = not crafting_book.can_craft(recipe, player_inventory)
 		button.pressed.connect(_craft_recipe.bind(recipe))
-		row.add_child(button)
+		button.custom_minimum_size = Vector2(92, 42)
+		box.add_child(button)
 		var text := Label.new()
-		text.text = "%s  (%s -> %s)" % [
+		text.text = "%s\n%s -> %s" % [
 			String(recipe.get("name", recipe.get("id", "Recette"))),
 			_format_item_map(recipe.get("input", {})),
 			_format_item_map(recipe.get("output", {}))
 		]
 		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		text.custom_minimum_size = Vector2(220, 0)
-		row.add_child(text)
+		text.custom_minimum_size = Vector2(190, 0)
+		box.add_child(text)
 		recipes_list.add_child(row)
+
+
+func _refresh_inventory_hotbar_editor() -> void:
+	if inventory_hotbar_box == null:
+		return
+	for child in inventory_hotbar_box.get_children():
+		child.queue_free()
+	for i in range(min(hotbar.size(), 9)):
+		var id := String(hotbar[i])
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(42, 42)
+		button.icon = _block_icon_texture(id)
+		button.text = str(i + 1)
+		button.tooltip_text = "%d - %s" % [i + 1, _block_name(id)]
+		button.add_theme_font_size_override("font_size", 11)
+		if i == selected_slot:
+			button.add_theme_color_override("font_color", Color(1.0, 0.9, 0.42))
+		button.pressed.connect(_select_inventory_hotbar_slot.bind(i))
+		inventory_hotbar_box.add_child(button)
+
+
+func _select_inventory_hotbar_slot(index: int) -> void:
+	_select_slot(index)
+	_refresh_inventory_hotbar_editor()
 
 
 func _craft_recipe(recipe: Dictionary) -> void:
@@ -1560,6 +1619,25 @@ func _rotate_view(relative: Vector2) -> void:
 func _select_slot(index: int) -> void:
 	selected_slot = posmod(index, min(hotbar.size(), 9))
 	_rebuild_hotbar()
+	if inventory_layer != null and inventory_layer.visible:
+		_refresh_inventory_hotbar_editor()
+
+
+func _assign_hotbar_from_inventory(id: String) -> void:
+	if id == "":
+		return
+	if not bool(blocks.get(id, {}).get("placeable", true)):
+		message = "%s ne peut pas être placé dans la barre rapide." % _block_name(id)
+		_update_hud()
+		return
+	var slot_count: int = min(hotbar.size(), 9)
+	if slot_count <= 0:
+		return
+	selected_slot = clampi(selected_slot, 0, slot_count - 1)
+	hotbar[selected_slot] = id
+	message = "%s ajouté en case %d." % [_block_name(id), selected_slot + 1]
+	_rebuild_hotbar()
+	_update_hud()
 
 
 func _selected_block_id() -> String:
@@ -1577,6 +1655,21 @@ func _block_name(id: String) -> String:
 	return String(blocks.get(id, {}).get("name", id))
 
 
+func _block_icon_texture(id: String) -> Texture2D:
+	var block: Dictionary = blocks.get(id, {})
+	var textures: Dictionary = block.get("textures", {})
+	var path := ""
+	if textures.has("top"):
+		path = String(textures["top"])
+	elif textures.has("all"):
+		path = String(textures["all"])
+	elif textures.has("side"):
+		path = String(textures["side"])
+	if path == "":
+		return null
+	return _load_png_texture(path)
+
+
 func _refresh_inventory_if_open() -> void:
 	if inventory_layer != null and inventory_layer.visible:
 		_refresh_inventory_ui()
@@ -1584,42 +1677,100 @@ func _refresh_inventory_if_open() -> void:
 
 func _rebuild_hotbar() -> void:
 	var slot_count: int = min(hotbar.size(), 9)
-	if hotbar_labels.size() != slot_count or hotbar_box.get_child_count() != slot_count:
+	if hotbar_slots.size() != slot_count or hotbar_box.get_child_count() != slot_count:
 		for child in hotbar_box.get_children():
 			child.queue_free()
-		hotbar_labels.clear()
-		hotbar_last_texts.clear()
+		hotbar_slots.clear()
+		hotbar_icons.clear()
+		hotbar_counts.clear()
+		hotbar_keys.clear()
+		hotbar_last_signatures.clear()
 		for i in range(slot_count):
 			var slot := PanelContainer.new()
-			slot.custom_minimum_size = Vector2(50, 50)
-			var label := Label.new()
-			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			slot.add_child(label)
+			slot.custom_minimum_size = Vector2(56, 56)
+			slot.mouse_filter = Control.MOUSE_FILTER_STOP
+			slot.gui_input.connect(_on_hotbar_slot_input.bind(i))
+
+			var margin := MarginContainer.new()
+			margin.add_theme_constant_override("margin_left", 4)
+			margin.add_theme_constant_override("margin_top", 3)
+			margin.add_theme_constant_override("margin_right", 4)
+			margin.add_theme_constant_override("margin_bottom", 3)
+			slot.add_child(margin)
+
+			var stack := VBoxContainer.new()
+			stack.alignment = BoxContainer.ALIGNMENT_CENTER
+			stack.add_theme_constant_override("separation", 0)
+			margin.add_child(stack)
+
+			var key_label := Label.new()
+			key_label.text = str(i + 1)
+			key_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			key_label.add_theme_font_size_override("font_size", 11)
+			stack.add_child(key_label)
+
+			var icon := TextureRect.new()
+			icon.custom_minimum_size = Vector2(34, 28)
+			icon.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			stack.add_child(icon)
+
+			var count_label := Label.new()
+			count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			count_label.add_theme_font_size_override("font_size", 10)
+			stack.add_child(count_label)
+
 			hotbar_box.add_child(slot)
-			hotbar_labels.append(label)
-			hotbar_last_texts.append("")
+			hotbar_slots.append(slot)
+			hotbar_icons.append(icon)
+			hotbar_counts.append(count_label)
+			hotbar_keys.append(key_label)
+			hotbar_last_signatures.append("")
 	_refresh_hotbar_labels()
 
 
 func _refresh_hotbar_labels() -> void:
-	for i in range(min(hotbar.size(), hotbar_labels.size())):
+	for i in range(min(hotbar.size(), hotbar_slots.size())):
 		var id := String(hotbar[i])
-		var block: Dictionary = blocks.get(id, {})
 		var count_text := ""
 		if game_mode == MODE_SURVIVAL:
-			count_text = " x%d" % player_inventory.count(id)
-		var text := "%d\n%s%s" % [i + 1, String(block.get("name", id)).left(6), count_text]
-		var label: Label = hotbar_labels[i]
-		if i >= hotbar_last_texts.size():
-			hotbar_last_texts.append("")
-		if hotbar_last_texts[i] != text:
-			label.text = text
-			hotbar_last_texts[i] = text
+			count_text = "x%d" % player_inventory.count(id)
+		var signature := "%s:%s:%s" % [id, count_text, str(i == selected_slot)]
+		if i >= hotbar_last_signatures.size():
+			hotbar_last_signatures.append("")
+		if hotbar_last_signatures[i] != signature:
+			var icon: TextureRect = hotbar_icons[i]
+			var count_label: Label = hotbar_counts[i]
+			var key_label: Label = hotbar_keys[i]
+			icon.texture = _block_icon_texture(id)
+			count_label.text = count_text
+			count_label.visible = count_text != ""
+			key_label.text = str(i + 1)
+			hotbar_slots[i].tooltip_text = "%d - %s" % [i + 1, _block_name(id)]
+			hotbar_last_signatures[i] = signature
 		if i == selected_slot:
-			label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.42))
+			_apply_hotbar_style(hotbar_slots[i], true)
+			hotbar_keys[i].add_theme_color_override("font_color", Color(1.0, 0.9, 0.42))
 		else:
-			label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+			_apply_hotbar_style(hotbar_slots[i], false)
+			hotbar_keys[i].add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+
+
+func _on_hotbar_slot_input(event: InputEvent, index: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_select_slot(index)
+
+
+func _apply_hotbar_style(slot: PanelContainer, selected: bool) -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.17, 0.19, 0.18, 0.92) if selected else Color(0.06, 0.07, 0.08, 0.84)
+	style.border_color = Color(1.0, 0.88, 0.34, 0.95) if selected else Color(0.35, 0.40, 0.40, 0.78)
+	style.set_border_width_all(2 if selected else 1)
+	style.corner_radius_top_left = 4
+	style.corner_radius_top_right = 4
+	style.corner_radius_bottom_left = 4
+	style.corner_radius_bottom_right = 4
+	slot.add_theme_stylebox_override("panel", style)
 
 
 func _update_hud() -> void:
