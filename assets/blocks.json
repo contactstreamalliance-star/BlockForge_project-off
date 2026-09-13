@@ -40,6 +40,35 @@
       }
     },
     {
+      "id": "deep_stone",
+      "name": "Roche profonde",
+      "solid": true,
+      "mineTime": 1.85,
+      "drops": "deep_stone",
+      "textures": {
+        "all": "res://assets/textures/blocks/deep_stone.png"
+      }
+    },
+    {
+      "id": "gravel",
+      "name": "Gravier",
+      "solid": true,
+      "mineTime": 0.42,
+      "textures": {
+        "all": "res://assets/textures/blocks/gravel.png"
+      }
+    },
+    {
+      "id": "rocky_dirt",
+      "name": "Terre rocheuse",
+      "solid": true,
+      "mineTime": 0.55,
+      "drops": "dirt",
+      "textures": {
+        "all": "res://assets/textures/blocks/rocky_dirt.png"
+      }
+    },
+    {
       "id": "clay",
       "name": "Argile",
       "solid": true,
@@ -69,12 +98,42 @@
       }
     },
     {
+      "id": "copper_ore",
+      "name": "Cuivre brut",
+      "solid": true,
+      "mineTime": 1.45,
+      "drops": "raw_copper",
+      "textures": {
+        "all": "res://assets/textures/blocks/copper_ore.png"
+      }
+    },
+    {
+      "id": "rare_ore",
+      "name": "Éclat rare",
+      "solid": true,
+      "mineTime": 2.1,
+      "drops": "forge_crystal",
+      "textures": {
+        "all": "res://assets/textures/blocks/rare_ore.png"
+      }
+    },
+    {
       "id": "sand",
       "name": "Sable",
       "solid": true,
       "mineTime": 0.3,
       "textures": {
         "all": "res://assets/textures/blocks/sand.png"
+      }
+    },
+    {
+      "id": "wet_sand",
+      "name": "Sable humide",
+      "solid": true,
+      "mineTime": 0.38,
+      "drops": "sand",
+      "textures": {
+        "all": "res://assets/textures/blocks/wet_sand.png"
       }
     },
     {
@@ -127,13 +186,24 @@
     },
     {
       "id": "water",
-      "name": "Eau",
+      "name": "Eau source",
       "solid": false,
       "mineTime": 0.1,
       "liquid": true,
       "transparent": true,
       "textures": {
         "all": "res://assets/textures/blocks/water.png"
+      }
+    },
+    {
+      "id": "shallow_water",
+      "name": "Eau peu profonde",
+      "solid": false,
+      "mineTime": 0.1,
+      "liquid": true,
+      "transparent": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/shallow_water.png"
       }
     },
     {
@@ -167,7 +237,19 @@
       "name": "Fer brut",
       "placeable": false,
       "stackable": true
+    },
+    {
+      "id": "raw_copper",
+      "name": "Cuivre brut",
+      "placeable": false,
+      "stackable": true
+    },
+    {
+      "id": "forge_crystal",
+      "name": "Éclat rare",
+      "placeable": false,
+      "stackable": true
     }
   ],
-  "hotbar": ["grass", "dirt", "stone", "sand", "log", "planks", "cobble", "granite", "workbench"]
+  "hotbar": ["grass", "dirt", "stone", "gravel", "log", "planks", "cobble", "deep_stone", "workbench"]
 }

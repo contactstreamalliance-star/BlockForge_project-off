@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.4.9-godot - 2026-09-13
+
+- Reduced oversized vertical cave openings in Worldgen V2.
+- Added vertical masks to main tunnels and room carving so caves stay closer to controlled bands instead of becoming extremely tall voids.
+- Reduced global cave density from `0.22` to `0.16`.
+- Raised cave thresholds so medium and large cave rooms are rarer.
+- Increased surface and floor buffers so caves avoid the terrain surface and the bottom layer more strongly.
+- Expanded the configured world to 128 chunks per side with `size` set to `2047`.
+- Kept `pregenerateFullWorldOnLoad` disabled so the larger world streams progressively instead of freezing at startup.
+
+## 0.4.8-godot - 2026-09-13
+
+- Rebalanced cave room generation so small caves are the most common, medium caves are rarer and large caves are very rare.
+- Added editable cave size thresholds to `assets/worldgen.json`: `caveSmallRoomThreshold`, `caveMediumRoomThreshold` and `caveLargeRoomThreshold`.
+- Small cave pockets now use tighter noise for smaller underground shapes.
+- Medium caves require a rarer room seed and more depth.
+- Large caves require deep underground placement, a high threshold and an extra rarity gate.
+
+## 0.4.7-godot - 2026-09-13
+
+- Reworked the Worldgen V2 cave system.
+- Added separate cave layers for main tunnels, secondary branches and deeper rooms.
+- Added editable cave controls in `assets/worldgen.json`: `caveSurfaceBuffer`, `caveFloorBuffer`, `caveTunnelScale`, `caveBranchScale` and `caveRoomScale`.
+- Protected the spawn more strongly from nearby cave cuts.
+- Caves now avoid the surface more consistently and reserve larger rooms for deeper underground layers.
+- Cave openness now reacts slightly to biomes, with mountain and rocky areas allowing more caves than coast and forest areas.
+
+## 0.4.6-godot - 2026-09-13
+
+- Added a larger smooth-mode optimization pass for the voxel engine.
+- World block keys now use `Vector3i` coordinates instead of formatted `x,y,z` strings.
+- Chunk rebuilds now reuse native block positions without text parsing.
+- Block rendering, collision and targeting now use cached block property dictionaries for solid, transparent, liquid, placeable and material lookups.
+- Mesh rebuild neighbor checks now read directly from the world dictionary by coordinate.
+- Disabled full block-by-block world pregeneration by default to avoid large startup stalls; `pregenerateFullWorldOnLoad` remains available in `assets/worldgen.json` for manual testing.
+- Removed the old text coordinate parser that was no longer needed.
+
+## 0.4.5-godot - 2026-09-13
+
+- Added a world-generation optimization pass focused on full loading pregeneration.
+- Generated blocks now write into the active chunk map directly instead of checking and resolving the chunk map for every block.
+- Height and biome caches now use `Vector2i` keys instead of formatted text keys.
+- Cave checks are skipped before calling noise when a column is inside the protected spawn, too deep for caves, or too close to the surface.
+- Water column generation now computes shallow-water state once per column.
+- Tree generation avoids rewriting the touched-chunk dictionary back into the active job after each tree.
+
+## 0.4.4-godot - 2026-09-13
+
+- Added full-world pregeneration during the loading screen when creating or joining a world.
+- Added `pregenerateFullWorldOnLoad` to `assets/worldgen.json`.
+- Loading progress now separates full map generation from spawn display preparation.
+- Initial generation is queued from the spawn outward so the start area stays prioritized.
+- Distant chunks are generated as world data only; the game still renders only the useful nearby chunks to avoid a massive startup mesh freeze.
+- Increased loading generation passes slightly while gameplay is inactive.
+
+## 0.4.3-godot - 2026-09-13
+
+- Added a larger anti-freeze optimization pass for world generation and chunk rebuilds.
+- Chunk visible-block caches now store `Vector3i` positions directly instead of reparsing text keys during mesh rebuilds.
+- Chunk block maps now also keep block positions, reducing coordinate parsing during visibility refreshes.
+- Tree generation is now processed across chunk job steps instead of all trees being placed in one burst at the end of a chunk.
+- Rebuilds caused by rapid block breaking/placing are briefly coalesced so the same chunk is not rebuilt too aggressively during click spam.
+- Worldgen block selection now receives cached water/min-height values instead of reading generation settings for every generated block.
+- Loading can process more generation passes while gameplay is inactive, making the start area prepare faster without giving control too early.
+
+## 0.4.2-godot - 2026-09-13
+
+- Moved Worldgen V2 terrain, biome, ore, cave and tree-density logic into `src/world/worldgen_v2.gd`.
+- Kept the active implementation in GDScript because the installed Godot build is not the .NET/C# build.
+- Added `docs/WORLDGEN_CSHARP.md` to document the future C# migration path.
+- Added essential terrain blocks: deep stone, gravel, rocky dirt, wet sand and shallow water.
+- Added copper ore, raw copper, rare ore and forge crystal.
+- Generated textures for the new blocks and updated the asset generator.
+- Updated terrain generation so deep layers, coasts, dry zones and rocky areas use the new blocks.
+
 ## 0.4.1-godot - 2026-09-13
 
 - Added a loading screen for Survival, Creative and New World startup.

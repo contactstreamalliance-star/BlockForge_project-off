@@ -139,6 +139,16 @@ def water() -> None:
     img.save(TEXTURES / "water.png")
 
 
+def shallow_water() -> None:
+    img = Image.new("RGBA", (16, 16), (68, 143, 190, 150))
+    draw = ImageDraw.Draw(img)
+    for y in [4, 9, 14]:
+        draw.line((0, y, 15, y), fill=(135, 205, 236, 180))
+    draw.line((2, 6, 7, 6), fill=(42, 112, 165, 160))
+    draw.line((9, 12, 14, 12), fill=(160, 220, 242, 175))
+    img.save(TEXTURES / "shallow_water.png")
+
+
 def make_icon() -> None:
     img = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -179,10 +189,16 @@ def main() -> None:
     pixel_texture("dirt", (118, 80, 49), [(92, 60, 39), (145, 102, 63), (130, 89, 55)])
     pixel_texture("stone", (122, 124, 119), [(99, 102, 97), (145, 147, 140), (112, 115, 110)])
     pixel_texture("granite", (139, 101, 91), [(101, 72, 66), (171, 126, 113), (118, 82, 76)])
+    pixel_texture("deep_stone", (56, 62, 66), [(38, 43, 47), (78, 84, 88), (66, 72, 76)])
+    pixel_texture("gravel", (119, 116, 106), [(86, 85, 80), (150, 146, 135), (103, 101, 95)])
+    pixel_texture("rocky_dirt", (107, 77, 54), [(78, 58, 43), (137, 105, 76), (103, 105, 98)])
     pixel_texture("clay", (105, 126, 132), [(78, 99, 105), (134, 154, 158), (93, 115, 121)])
     ore_texture("coal_ore", (112, 116, 113), (37, 36, 34))
     ore_texture("iron_ore", (119, 116, 108), (197, 125, 70))
+    ore_texture("copper_ore", (104, 107, 102), (216, 125, 64))
+    ore_texture("rare_ore", (68, 71, 88), (104, 220, 205))
     pixel_texture("sand", (205, 187, 119), [(225, 208, 140), (179, 163, 99), (216, 198, 128)])
+    pixel_texture("wet_sand", (153, 137, 96), [(178, 162, 111), (124, 111, 82), (164, 149, 102)])
     pixel_texture("log_side", (124, 82, 42), [(88, 56, 30), (166, 110, 58), (143, 94, 48)])
     log_top()
     pixel_texture("leaves", (48, 111, 52), [(68, 139, 64), (36, 82, 39), (83, 151, 73)])
@@ -190,6 +206,7 @@ def main() -> None:
     cobble()
     glass()
     water()
+    shallow_water()
     pixel_texture("marble", (207, 210, 215), [(172, 177, 187), (236, 238, 242), (145, 151, 166)])
     workbench()
     make_icon()

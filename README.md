@@ -51,3 +51,19 @@ La 0.3.11 allège ce correctif: les arbres marquent les chunks à rafraîchir sa
 La 0.4.0 commence le Worldgen V2: monde plus grand, hauteur et profondeur augmentées, biomes simples, relief multi-couches, grottes plus profondes et paramètres de génération plus faciles à modifier.
 
 La 0.4.1 ajoute un écran de chargement de monde: le jeu prépare les chunks proches du spawn avant de donner le contrôle au joueur, et le menu principal ne génère plus le monde en arrière-plan avant le choix du mode.
+
+La 0.4.2 sépare le Worldgen V2 dans `src/world/worldgen_v2.gd`, prépare une future migration C# documentée, et ajoute les blocs essentiels de terrain: roche profonde, gravier, terre rocheuse, sable humide, eau peu profonde, cuivre et minerai rare.
+
+La 0.4.3 ajoute une grosse passe anti-freeze: génération d'arbres étalée, caches de positions pour les chunks, moins de lectures répétées en worldgen et regroupement des reconstructions pendant le spam clic.
+
+La 0.4.4 pré-génère toute la carte pendant l'écran de chargement quand un monde est créé ou rejoint. Le chargement peut durer plus longtemps, mais l'exploration évite davantage les freezes de génération.
+
+La 0.4.5 optimise cette pré-génération: moins de clés texte, moins de recherches de dictionnaires par bloc et moins de calculs de grottes inutiles pendant la création du monde.
+
+La 0.4.6 passe le moteur voxel en mode fluide par défaut: les blocs utilisent des coordonnées natives plus rapides, les propriétés de blocs sont mises en cache et la pré-génération complète brute n'est plus activée automatiquement au lancement.
+
+La 0.4.7 retravaille les grottes du Worldgen V2 avec tunnels principaux, branches secondaires, salles profondes, protection renforcée du spawn et nouveaux paramètres modifiables dans `assets/worldgen.json`.
+
+La 0.4.8 ajuste la taille des grottes: petites grottes plus fréquentes, moyennes plus rares et grandes grottes très rares, avec trois seuils configurables dans `assets/worldgen.json`.
+
+La 0.4.9 corrige les sous-sols trop ouverts: les grottes sont moins hautes, les grandes salles deviennent vraiment rares, et le monde passe à 128 chunks de côté en chargement progressif.

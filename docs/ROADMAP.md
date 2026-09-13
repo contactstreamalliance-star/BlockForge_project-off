@@ -27,12 +27,15 @@
 - Editable world generation settings in `assets/worldgen.json`.
 - Loading screen while creating a world.
 - Spawn chunks prepared before player control is enabled.
+- Worldgen V2 split into its own module.
+- Essential terrain blocks: deep stone, gravel, rocky dirt, wet sand, copper ore and rare ore.
+- C# migration path documented for a future Godot .NET setup.
 
 ## Next
 
 - Main menu world selection.
 - Useful survival blocks: primitive furnace, chest, torches and stronger workbench progression.
-- More blocks, tools and survival systems.
+- Tools and survival systems.
 - Improved 32x32 block textures.
 - Mod manifests.
 - Cleaner modding hooks for blocks, recipes and world generation.

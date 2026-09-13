@@ -1,9 +1,9 @@
 extends Node3D
 
-const BLOCKS_PATH := "res://assets/blocks.json" #test
+const BLOCKS_PATH := "res://assets/blocks.json"
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
-const VERSION_LABEL := "0.4.1"
+const VERSION_LABEL := "0.4.9"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -25,6 +25,8 @@ const CHUNK_GENERATIONS_PER_TICK := 1
 const CHUNK_GENERATION_COLUMNS_PER_TICK := 6
 const CHUNK_GENERATION_BUDGET_USEC := 1800
 const CHUNK_REBUILD_BUDGET_USEC := 2600
+const CHUNK_REBUILD_DEBOUNCE_MSEC := 55
+const LOADING_GENERATION_PASSES := 4
 const INITIAL_LOAD_MIN_TIME := 0.35
 const TARGET_REFRESH_TIME := 0.08
 const DROPPED_ITEM_REFRESH_TIME := 0.08
@@ -43,15 +45,16 @@ const FACE_CORNERS := [
 	[Vector3(-0.5, -0.5, 0.5), Vector3(0.5, -0.5, 0.5), Vector3(0.5, 0.5, 0.5), Vector3(-0.5, 0.5, 0.5)]
 ]
 
-const AudioLibraryScript := preload("res://scripts/systems/audio_library.gd")
-const BlockMaterialFactoryScript := preload("res://scripts/world/block_material_factory.gd")
-const BlockForgeInventorySlotScript := preload("res://scripts/ui/blockforge_inventory_slot.gd")
-const CraftingBookScript := preload("res://scripts/systems/crafting_book.gd")
-const PatchNotesControllerScript := preload("res://scripts/ui/patch_notes_controller.gd")
-const PlayerInventoryScript := preload("res://scripts/systems/player_inventory.gd")
-const SelectionOutlineScript := preload("res://scripts/world/selection_outline.gd")
-const TextureCacheScript := preload("res://scripts/utils/texture_cache.gd")
-const VoxelMathScript := preload("res://scripts/world/voxel_math.gd")
+const AudioLibraryScript := preload("res://src/systems/audio_library.gd")
+const BlockMaterialFactoryScript := preload("res://src/world/block_material_factory.gd")
+const BlockForgeInventorySlotScript := preload("res://src/ui/blockforge_inventory_slot.gd")
+const CraftingBookScript := preload("res://src/systems/crafting_book.gd")
+const PatchNotesControllerScript := preload("res://src/ui/patch_notes_controller.gd")
+const PlayerInventoryScript := preload("res://src/systems/player_inventory.gd")
+const SelectionOutlineScript := preload("res://src/world/selection_outline.gd")
+const TextureCacheScript := preload("res://src/utils/texture_cache.gd")
+const VoxelMathScript := preload("res://src/world/voxel_math.gd")
+const WorldgenV2Script := preload("res://src/world/worldgen_v2.gd")
 
 var camera: Camera3D
 var world_environment: WorldEnvironment
@@ -82,6 +85,12 @@ var crafting_book
 var dropped_items_parent: Node3D
 
 var blocks := {}
+var block_materials := {}
+var solid_block_ids := {}
+var transparent_block_ids := {}
+var liquid_block_ids := {}
+var placeable_block_ids := {}
+var single_material_block_ids := {}
 var placeable_blocks := []
 var hotbar := []
 var world := {}
@@ -96,11 +105,13 @@ var queued_chunk_generations := {}
 var active_chunk_generation := {}
 var chunk_rebuild_queue := []
 var queued_chunk_rebuilds := {}
+var chunk_rebuild_ready_msec := {}
 var terrain_height_cache := {}
 var biome_cache := {}
 var loading_active := false
 var loading_timer := 0.0
-var loading_target_chunks := {}
+var loading_generation_chunks := {}
+var loading_display_chunks := {}
 var pending_start_mode := MODE_SURVIVAL
 var pending_world_reset := false
 var selected_slot := 0
@@ -156,7 +167,7 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	var generation_passes := 2 if loading_active else 1
+	var generation_passes := LOADING_GENERATION_PASSES if loading_active else 1
 	for i in range(generation_passes):
 		_process_chunk_generation_queue(CHUNK_GENERATIONS_PER_TICK)
 	_process_chunk_rebuild_queue(CHUNK_REBUILDS_PER_TICK)
@@ -223,16 +234,32 @@ func _load_game_data() -> void:
 	world_seed = int(worldgen.get("seed", 1))
 	render_distance_chunks = maxi(0, int(worldgen.get("renderDistanceChunks", 1)))
 	hotbar = block_data.get("hotbar", [])
+	block_materials.clear()
+	solid_block_ids.clear()
+	transparent_block_ids.clear()
+	liquid_block_ids.clear()
+	placeable_block_ids.clear()
+	single_material_block_ids.clear()
 	placeable_blocks.clear()
 
 	for block in block_data.get("blocks", []):
 		var id := String(block.get("id", ""))
 		if id == "":
 			continue
+		if bool(block.get("solid", false)):
+			solid_block_ids[id] = true
+		if bool(block.get("transparent", false)):
+			transparent_block_ids[id] = true
+		if bool(block.get("liquid", false)):
+			liquid_block_ids[id] = true
 		if bool(block.get("placeable", true)):
 			block["materials"] = block_material_factory.create_block_materials(block)
+			block_materials[id] = block["materials"]
 			var texture_paths: Dictionary = block.get("textures", {})
 			block["singleMaterial"] = texture_paths.has("all")
+			if bool(block["singleMaterial"]):
+				single_material_block_ids[id] = true
+			placeable_block_ids[id] = true
 			placeable_blocks.append(id)
 		blocks[id] = block
 
@@ -815,6 +842,9 @@ func _generate_world() -> void:
 	chunk_generation_queue.clear()
 	queued_chunk_generations.clear()
 	active_chunk_generation.clear()
+	chunk_rebuild_queue.clear()
+	queued_chunk_rebuilds.clear()
+	chunk_rebuild_ready_msec.clear()
 	terrain_height_cache.clear()
 	biome_cache.clear()
 	world_seed = int(worldgen.get("seed", 1))
@@ -826,7 +856,7 @@ func _generate_world() -> void:
 	bulk_world_update = false
 	for chunk_key in chunk_blocks.keys():
 		_rebuild_visible_block_cache(chunk_key)
-	for chunk_key in _desired_chunk_keys(Vector2i.ZERO).keys():
+	for chunk_key in _initial_generation_chunk_key_list():
 		_queue_chunk_generation(chunk_key)
 	message = "Nouveau monde généré."
 
@@ -857,8 +887,11 @@ func _create_chunk_generation_job(chunk_key: String) -> Dictionary:
 	var max_x: int = mini(half, end_x)
 	var min_z: int = maxi(-half, start_z)
 	var max_z: int = mini(half, end_z)
+	if not chunk_blocks.has(chunk_key):
+		chunk_blocks[chunk_key] = {}
 	return {
 		"chunk_key": chunk_key,
+		"block_map": chunk_blocks[chunk_key],
 		"min_x": min_x,
 		"max_x": max_x,
 		"min_z": min_z,
@@ -866,6 +899,9 @@ func _create_chunk_generation_job(chunk_key: String) -> Dictionary:
 		"x": min_x,
 		"z": min_z,
 		"tree_spots": [],
+		"tree_index": 0,
+		"tree_chunk_keys": {},
+		"columns_done": false,
 		"min_y": int(worldgen.get("minHeight", -16)),
 		"water_level": int(worldgen.get("waterLevel", 8)),
 		"water_enabled": bool(worldgen.get("waterEnabled", false)),
@@ -874,7 +910,15 @@ func _create_chunk_generation_job(chunk_key: String) -> Dictionary:
 		"tree_chance": float(worldgen.get("treeChance", 0.006)),
 		"spawn_radius": int(worldgen.get("spawnPlateauRadius", 11)),
 		"cave_tunnel_threshold": float(worldgen.get("caveTunnelThreshold", 0.72)),
-		"cave_pocket_threshold": float(worldgen.get("cavePocketThreshold", 0.82))
+		"cave_pocket_threshold": float(worldgen.get("cavePocketThreshold", 0.82)),
+		"cave_surface_buffer": int(worldgen.get("caveSurfaceBuffer", 7)),
+		"cave_floor_buffer": int(worldgen.get("caveFloorBuffer", 4)),
+		"cave_tunnel_scale": float(worldgen.get("caveTunnelScale", 0.064)),
+		"cave_branch_scale": float(worldgen.get("caveBranchScale", 0.046)),
+		"cave_room_scale": float(worldgen.get("caveRoomScale", 0.038)),
+		"cave_small_room_threshold": float(worldgen.get("caveSmallRoomThreshold", 0.79)),
+		"cave_medium_room_threshold": float(worldgen.get("caveMediumRoomThreshold", 0.88)),
+		"cave_large_room_threshold": float(worldgen.get("caveLargeRoomThreshold", 0.94))
 	}
 
 
@@ -882,35 +926,45 @@ func _process_chunk_generation_job(job: Dictionary, max_columns: int) -> bool:
 	var count := 0
 	bulk_world_update = true
 	while count < max_columns and not job.is_empty():
-		var x := int(job["x"])
-		var z := int(job["z"])
-		_generate_chunk_column(job, x, z)
-		count += 1
-		z += 1
-		if z > int(job["max_z"]):
-			z = int(job["min_z"])
-			x += 1
-		job["x"] = x
-		job["z"] = z
-		if x > int(job["max_x"]):
-			var chunk_key := String(job["chunk_key"])
-			var tree_spots: Array = job["tree_spots"]
-			var tree_chunk_keys: Dictionary = {}
-			for i in range(tree_spots.size()):
-				var spot: Vector3i = tree_spots[i]
-				var touched_chunks: Dictionary = _grow_tree(spot.x, spot.y, spot.z)
-				for touched_key in touched_chunks.keys():
-					tree_chunk_keys[String(touched_key)] = true
-			generated_chunk_keys[chunk_key] = true
-			_invalidate_visible_block_cache(chunk_key)
-			for touched_key in tree_chunk_keys.keys():
-				var touched_chunk_key := String(touched_key)
-				_invalidate_visible_block_cache(touched_chunk_key)
-				if touched_chunk_key != chunk_key and generated_chunk_keys.has(touched_chunk_key) and visible_chunk_keys.has(touched_chunk_key):
-					_queue_chunk_rebuild(touched_chunk_key)
-			bulk_world_update = false
-			job.clear()
-			return true
+		if not bool(job.get("columns_done", false)):
+			var x := int(job["x"])
+			var z := int(job["z"])
+			_generate_chunk_column(job, x, z)
+			count += 1
+			z += 1
+			if z > int(job["max_z"]):
+				z = int(job["min_z"])
+				x += 1
+			job["x"] = x
+			job["z"] = z
+			if x > int(job["max_x"]):
+				job["columns_done"] = true
+			continue
+
+		var tree_index := int(job.get("tree_index", 0))
+		var tree_spots: Array = job["tree_spots"]
+		if tree_index < tree_spots.size():
+			var spot: Vector3i = tree_spots[tree_index]
+			var tree_chunk_keys: Dictionary = job.get("tree_chunk_keys", {})
+			var touched_chunks: Dictionary = _grow_tree(spot.x, spot.y, spot.z)
+			for touched_key in touched_chunks.keys():
+				tree_chunk_keys[String(touched_key)] = true
+			job["tree_index"] = tree_index + 1
+			count += 1
+			continue
+
+		var chunk_key := String(job["chunk_key"])
+		generated_chunk_keys[chunk_key] = true
+		_invalidate_visible_block_cache(chunk_key)
+		var final_tree_chunk_keys: Dictionary = job.get("tree_chunk_keys", {})
+		for touched_key in final_tree_chunk_keys.keys():
+			var touched_chunk_key := String(touched_key)
+			_invalidate_visible_block_cache(touched_chunk_key)
+			if touched_chunk_key != chunk_key and generated_chunk_keys.has(touched_chunk_key) and visible_chunk_keys.has(touched_chunk_key):
+				_queue_chunk_rebuild(touched_chunk_key)
+		bulk_world_update = false
+		job.clear()
+		return true
 	bulk_world_update = false
 	return false
 
@@ -926,131 +980,54 @@ func _generate_chunk_column(job: Dictionary, x: int, z: int) -> void:
 	var spawn_radius := int(job["spawn_radius"])
 	var cave_tunnel_threshold := float(job["cave_tunnel_threshold"])
 	var cave_pocket_threshold := float(job["cave_pocket_threshold"])
-	var chunk_key := String(job["chunk_key"])
+	var cave_surface_buffer := int(job["cave_surface_buffer"])
+	var cave_floor_buffer := int(job["cave_floor_buffer"])
+	var cave_tunnel_scale := float(job["cave_tunnel_scale"])
+	var cave_branch_scale := float(job["cave_branch_scale"])
+	var cave_room_scale := float(job["cave_room_scale"])
+	var cave_small_room_threshold := float(job["cave_small_room_threshold"])
+	var cave_medium_room_threshold := float(job["cave_medium_room_threshold"])
+	var cave_large_room_threshold := float(job["cave_large_room_threshold"])
+	var block_map: Dictionary = job["block_map"]
 	var biome := _biome_at(x, z)
+	var cave_enabled: bool = cave_chance > 0.0 and (abs(x) > spawn_radius + 4 or abs(z) > spawn_radius + 4)
+	var cave_min_y := min_y + cave_floor_buffer
+	var cave_max_y := height - cave_surface_buffer
 	for y in range(min_y, height + 1):
-		if _is_cave_air_fast(x, y, z, height, min_y, cave_chance, spawn_radius, cave_tunnel_threshold, cave_pocket_threshold):
+		if cave_enabled and y >= cave_min_y and y <= cave_max_y and _is_cave_air_fast(x, y, z, height, min_y, cave_chance, spawn_radius, cave_tunnel_threshold, cave_pocket_threshold, cave_surface_buffer, cave_floor_buffer, cave_tunnel_scale, cave_branch_scale, cave_room_scale, cave_small_room_threshold, cave_medium_room_threshold, cave_large_room_threshold, biome):
 			continue
-		_set_generated_block(x, y, z, _natural_block_id_fast(x, y, z, height, water_level, min_y, ore_chance, biome), chunk_key)
+		_set_generated_block_fast(x, y, z, _natural_block_id_fast(x, y, z, height, water_level, min_y, ore_chance, biome), block_map)
 
 	if water_enabled and height < water_level:
+		var shallow_top: bool = water_level - height <= 2
 		for y in range(height + 1, water_level + 1):
-			_set_generated_block(x, y, z, "water", chunk_key)
+			var water_id := "shallow_water" if y == water_level and shallow_top else "water"
+			_set_generated_block_fast(x, y, z, water_id, block_map)
 
 	var outside_spawn: bool = abs(x) > spawn_radius + 4 or abs(z) > spawn_radius + 4
 	if height > water_level + 2 and outside_spawn and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < _tree_chance_for_biome(biome, tree_chance):
 		var tree_spots: Array = job["tree_spots"]
 		tree_spots.append(Vector3i(x, height + 1, z))
-		job["tree_spots"] = tree_spots
 
 
 func _terrain_height(x: int, z: int) -> int:
-	var cache_key: String = "%d,%d" % [x, z]
-	if terrain_height_cache.has(cache_key):
-		return int(terrain_height_cache[cache_key])
-	var water_level := int(worldgen.get("waterLevel", 8))
-	var max_height := int(worldgen.get("maxHeight", 24))
-	var min_height := int(worldgen.get("minHeight", -16))
-	var plateau_radius := int(worldgen.get("spawnPlateauRadius", 13))
-	var plateau_height := int(worldgen.get("spawnPlateauHeight", water_level + 4))
-	if String(worldgen.get("terrainMode", "")) == "showcase_flat":
-		return plateau_height
-	var dist: int = maxi(abs(x), abs(z))
-	var hill_strength := float(worldgen.get("hillStrength", 7.0))
-	var mountain_strength := float(worldgen.get("mountainStrength", 16.0))
-	var detail_strength: float = float(worldgen.get("detailStrength", 3.0))
-	var biome: String = _biome_at(x, z)
-	var broad: float = VoxelMathScript.value_noise(x * 0.018, z * 0.018, world_seed)
-	var continent: float = VoxelMathScript.value_noise(x * 0.009 + 20.0, z * 0.009 - 80.0, world_seed + 7)
-	var hills: float = VoxelMathScript.value_noise(x * 0.058 + 90.0, z * 0.058 - 27.0, world_seed + 11)
-	var detail: float = VoxelMathScript.value_noise(x * 0.17 - 18.0, z * 0.17 + 44.0, world_seed + 23) - 0.5
-	var ridge: float = absf(VoxelMathScript.value_noise(x * 0.032 - 200.0, z * 0.032 + 140.0, world_seed + 41) - 0.5) * 2.0
-	var biome_lift: float = _biome_height_offset(biome)
-	var biome_hills: float = _biome_hill_multiplier(biome)
-	var mountains: float = pow(maxf(0.0, broad - 0.52), 1.42) * mountain_strength
-	if biome == "mountain":
-		mountains += pow(maxf(0.0, ridge - 0.34), 1.18) * mountain_strength * 0.82
-	elif biome == "rocky":
-		mountains += pow(maxf(0.0, ridge - 0.42), 1.35) * mountain_strength * 0.38
-	var shore_drop := 0.0
-	if biome == "coast":
-		shore_drop = -4.0
-	var natural: float = float(water_level + 5) + (continent - 0.44) * 11.0 + (hills - 0.46) * hill_strength * biome_hills + detail * detail_strength + mountains + biome_lift + shore_drop
-	if dist <= plateau_radius:
-		terrain_height_cache[cache_key] = plateau_height
-		return plateau_height
-	var blend_distance: float = float(worldgen.get("plateauBlendDistance", 10.0))
-	var blend: float = clampf(float(dist - plateau_radius) / maxf(1.0, blend_distance), 0.0, 1.0)
-	var result: int = clampi(roundi(lerpf(float(plateau_height), natural, blend)), min_height + 6, max_height)
-	terrain_height_cache[cache_key] = result
-	return result
+	return WorldgenV2Script.terrain_height(x, z, worldgen, world_seed, terrain_height_cache, biome_cache)
 
 
 func _biome_at(x: int, z: int) -> String:
-	var cache_key: String = "%d,%d" % [x, z]
-	if biome_cache.has(cache_key):
-		return String(biome_cache[cache_key])
-	var scale := float(worldgen.get("biomeScale", 0.018))
-	var heat: float = VoxelMathScript.value_noise(x * scale + 120.0, z * scale - 80.0, world_seed + 101)
-	var moisture: float = VoxelMathScript.value_noise(x * scale - 240.0, z * scale + 160.0, world_seed + 203)
-	var ridge: float = VoxelMathScript.value_noise(x * scale * 1.5, z * scale * 1.5, world_seed + 307)
-	var water_level := int(worldgen.get("waterLevel", 8))
-	var quick_height: float = float(water_level + 5) + (VoxelMathScript.value_noise(x * 0.009 + 20.0, z * 0.009 - 80.0, world_seed + 7) - 0.44) * 11.0
-	var biome: String = "meadow"
-	if quick_height <= float(water_level + 1):
-		biome = "coast"
-	elif ridge > 0.76:
-		biome = "mountain"
-	elif moisture > 0.62 and heat > 0.28:
-		biome = "forest"
-	elif moisture < 0.33 and heat > 0.55:
-		biome = "dry"
-	elif ridge > 0.58:
-		biome = "rocky"
-	biome_cache[cache_key] = biome
-	return biome
+	return WorldgenV2Script.biome_at(x, z, worldgen, world_seed, biome_cache)
 
 
 func _biome_height_offset(biome: String) -> float:
-	if biome == "mountain":
-		return 7.0
-	if biome == "rocky":
-		return 2.5
-	if biome == "dry":
-		return -1.5
-	if biome == "forest":
-		return 1.0
-	if biome == "coast":
-		return -3.0
-	return 0.0
+	return WorldgenV2Script.biome_height_offset(biome)
 
 
 func _biome_hill_multiplier(biome: String) -> float:
-	if biome == "mountain":
-		return 1.45
-	if biome == "rocky":
-		return 1.25
-	if biome == "coast":
-		return 0.45
-	if biome == "dry":
-		return 0.72
-	return 1.0
+	return WorldgenV2Script.biome_hill_multiplier(biome)
 
 
 func _tree_chance_for_biome(biome: String, base_chance: float) -> float:
-	if biome == "forest":
-		return base_chance * 2.8
-	if biome == "meadow":
-		return base_chance
-	if biome == "coast":
-		return base_chance * 0.28
-	if biome == "dry":
-		return base_chance * 0.18
-	if biome == "rocky":
-		return base_chance * 0.35
-	if biome == "mountain":
-		return base_chance * 0.12
-	return base_chance
+	return WorldgenV2Script.tree_chance_for_biome(biome, base_chance)
 
 
 func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) -> String:
@@ -1058,34 +1035,7 @@ func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) ->
 
 
 func _natural_block_id_fast(x: int, y: int, z: int, height: int, water_level: int, min_y: int, ore_chance: float, biome: String = "meadow") -> String:
-	if y == height:
-		if height <= water_level + 1:
-			return "sand" if VoxelMathScript.hash2(x, z, world_seed + 41) > 0.18 else "clay"
-		if biome == "dry":
-			return "sand" if VoxelMathScript.hash2(x, z, world_seed + 141) > 0.35 else "dirt"
-		if biome == "mountain" and height > water_level + 22:
-			return "stone" if VoxelMathScript.hash2(x, z, world_seed + 151) > 0.22 else "granite"
-		if biome == "rocky" and VoxelMathScript.hash2(x, z, world_seed + 161) > 0.48:
-			return "stone"
-		return "grass"
-	if y > height - 4:
-		if height <= water_level + 2:
-			return "sand" if VoxelMathScript.hash3(x, y, z, world_seed + 82) > 0.18 else "clay"
-		if biome == "dry":
-			return "sand" if y > height - 3 else "dirt"
-		if biome == "mountain" and height > water_level + 22:
-			return "stone"
-		if biome == "rocky":
-			return "stone" if y > height - 2 else "dirt"
-		return "dirt"
-	var ore := _ore_block_id_fast(x, y, z, ore_chance)
-	if ore != "":
-		return ore
-	if y < min_y + 7 and VoxelMathScript.hash3(x, y, z, world_seed + 17) < 0.34:
-		return "granite"
-	if VoxelMathScript.hash3(x, y, z, world_seed + 99) < 0.018:
-		return "marble"
-	return "stone"
+	return WorldgenV2Script.natural_block_id(x, y, z, height, water_level, min_y, world_seed, biome, ore_chance)
 
 
 func _ore_block_id(x: int, y: int, z: int) -> String:
@@ -1094,12 +1044,7 @@ func _ore_block_id(x: int, y: int, z: int) -> String:
 
 
 func _ore_block_id_fast(x: int, y: int, z: int, chance: float) -> String:
-	var roll := VoxelMathScript.hash3(x, y, z, world_seed + 301)
-	if y < 8 and roll < chance * 0.45:
-		return "iron_ore"
-	if y < 24 and roll < chance:
-		return "coal_ore"
-	return ""
+	return WorldgenV2Script.ore_block_id(x, y, z, int(worldgen.get("minHeight", -16)), chance, world_seed)
 
 
 func _is_cave_air(x: int, y: int, z: int, surface_y: int) -> bool:
@@ -1108,20 +1053,19 @@ func _is_cave_air(x: int, y: int, z: int, surface_y: int) -> bool:
 	var spawn_radius := int(worldgen.get("spawnPlateauRadius", 11))
 	var tunnel_threshold := float(worldgen.get("caveTunnelThreshold", 0.72))
 	var pocket_threshold := float(worldgen.get("cavePocketThreshold", 0.82))
-	return _is_cave_air_fast(x, y, z, surface_y, min_y, cave_chance, spawn_radius, tunnel_threshold, pocket_threshold)
+	var surface_buffer := int(worldgen.get("caveSurfaceBuffer", 7))
+	var floor_buffer := int(worldgen.get("caveFloorBuffer", 4))
+	var tunnel_scale := float(worldgen.get("caveTunnelScale", 0.064))
+	var branch_scale := float(worldgen.get("caveBranchScale", 0.046))
+	var room_scale := float(worldgen.get("caveRoomScale", 0.038))
+	var small_room_threshold := float(worldgen.get("caveSmallRoomThreshold", 0.79))
+	var medium_room_threshold := float(worldgen.get("caveMediumRoomThreshold", 0.88))
+	var large_room_threshold := float(worldgen.get("caveLargeRoomThreshold", 0.94))
+	return _is_cave_air_fast(x, y, z, surface_y, min_y, cave_chance, spawn_radius, tunnel_threshold, pocket_threshold, surface_buffer, floor_buffer, tunnel_scale, branch_scale, room_scale, small_room_threshold, medium_room_threshold, large_room_threshold, _biome_at(x, z))
 
 
-func _is_cave_air_fast(x: int, y: int, z: int, surface_y: int, min_y: int, cave_chance: float, spawn_radius: int, tunnel_threshold: float, pocket_threshold: float) -> bool:
-	if abs(x) <= spawn_radius + 3 and abs(z) <= spawn_radius + 3:
-		return false
-	if y <= min_y + 2 or y >= surface_y - 4:
-		return false
-	var tunnel: float = VoxelMathScript.value_noise(x * 0.072 + float(y) * 0.018 + 7.0, z * 0.072 - float(y) * 0.011 - 11.0, world_seed + 401)
-	var cross_tunnel: float = VoxelMathScript.value_noise(x * 0.048 - float(y) * 0.016, z * 0.048 + float(y) * 0.02, world_seed + 619)
-	var pocket: float = VoxelMathScript.value_noise((x + y) * 0.046, (z - y) * 0.046, world_seed + 511)
-	var depth_bonus := clampf(float(surface_y - y) / 52.0, 0.0, 0.22)
-	var chance_shift := cave_chance * 0.13
-	return tunnel > tunnel_threshold - chance_shift or (cross_tunnel > tunnel_threshold + 0.04 - chance_shift and tunnel > 0.54) or pocket > pocket_threshold - depth_bonus
+func _is_cave_air_fast(x: int, y: int, z: int, surface_y: int, min_y: int, cave_chance: float, spawn_radius: int, tunnel_threshold: float, pocket_threshold: float, surface_buffer: int, floor_buffer: int, tunnel_scale: float, branch_scale: float, room_scale: float, small_room_threshold: float, medium_room_threshold: float, large_room_threshold: float, biome: String) -> bool:
+	return WorldgenV2Script.is_cave_air(x, y, z, surface_y, min_y, cave_chance, spawn_radius, tunnel_threshold, pocket_threshold, surface_buffer, floor_buffer, tunnel_scale, branch_scale, room_scale, small_room_threshold, medium_room_threshold, large_room_threshold, biome, world_seed)
 
 
 func _add_showcase_details() -> void:
@@ -1186,6 +1130,7 @@ func _rebuild_meshes() -> void:
 	visible_chunk_keys.clear()
 	chunk_rebuild_queue.clear()
 	queued_chunk_rebuilds.clear()
+	chunk_rebuild_ready_msec.clear()
 	block_count = 0
 	last_stream_chunk = Vector2i(999999, 999999)
 	_update_streamed_chunks(true)
@@ -1217,6 +1162,50 @@ func _desired_chunk_keys(center: Vector2i, extra_distance: int = 0) -> Dictionar
 		for cz in range(center.y - distance, center.y + distance + 1):
 			desired[_chunk_key_from_coords(cx, cz)] = true
 	return desired
+
+
+func _initial_generation_chunk_keys() -> Dictionary:
+	if bool(worldgen.get("pregenerateFullWorldOnLoad", false)):
+		return _all_world_chunk_keys()
+	return _desired_chunk_keys(Vector2i.ZERO)
+
+
+func _initial_generation_chunk_key_list() -> Array:
+	var all_keys := _initial_generation_chunk_keys()
+	var spawn_keys := _desired_chunk_keys(Vector2i.ZERO)
+	var ordered_keys := []
+	for chunk_key in spawn_keys.keys():
+		if all_keys.has(chunk_key):
+			ordered_keys.append(chunk_key)
+	var remaining_keys := []
+	for chunk_key in all_keys.keys():
+		if not spawn_keys.has(chunk_key):
+			remaining_keys.append(chunk_key)
+	remaining_keys.sort_custom(_compare_chunk_keys_near_spawn)
+	ordered_keys.append_array(remaining_keys)
+	return ordered_keys
+
+
+func _compare_chunk_keys_near_spawn(a, b) -> bool:
+	var ca := _parse_chunk_key(String(a))
+	var cb := _parse_chunk_key(String(b))
+	var da := ca.x * ca.x + ca.y * ca.y
+	var db := cb.x * cb.x + cb.y * cb.y
+	if da == db:
+		return String(a) < String(b)
+	return da < db
+
+
+func _all_world_chunk_keys() -> Dictionary:
+	var result := {}
+	var size := int(worldgen.get("size", 44))
+	var half: int = int(size / 2)
+	var min_chunk := floori(float(-half) / float(CHUNK_SIZE))
+	var max_chunk := floori(float(half) / float(CHUNK_SIZE))
+	for cx in range(min_chunk, max_chunk + 1):
+		for cz in range(min_chunk, max_chunk + 1):
+			result[_chunk_key_from_coords(cx, cz)] = true
+	return result
 
 
 func _rebuild_nearby_chunks(pos: Vector3i) -> void:
@@ -1256,11 +1245,16 @@ func _clear_chunk_meshes(chunk_key: String, forget_visible: bool = true) -> void
 		visible_chunk_keys.erase(chunk_key)
 		queued_chunk_rebuilds.erase(chunk_key)
 		queued_chunk_generations.erase(chunk_key)
+		chunk_rebuild_ready_msec.erase(chunk_key)
 
 
 func _queue_chunk_rebuild(chunk_key: String, front: bool = false) -> void:
 	if chunk_key == "":
 		return
+	if front and game_active:
+		chunk_rebuild_ready_msec[chunk_key] = Time.get_ticks_msec() + CHUNK_REBUILD_DEBOUNCE_MSEC
+	elif not chunk_rebuild_ready_msec.has(chunk_key):
+		chunk_rebuild_ready_msec[chunk_key] = 0
 	if queued_chunk_rebuilds.has(chunk_key):
 		if front:
 			chunk_rebuild_queue.erase(chunk_key)
@@ -1297,7 +1291,7 @@ func _process_chunk_generation_queue(max_count: int) -> void:
 				continue
 		var active_key := String(active_chunk_generation.get("chunk_key", ""))
 		if _process_chunk_generation_job(active_chunk_generation, CHUNK_GENERATION_COLUMNS_PER_TICK):
-			if active_key != "":
+			if active_key != "" and visible_chunk_keys.has(active_key):
 				_queue_chunk_rebuild(active_key)
 			finished += 1
 		else:
@@ -1309,7 +1303,12 @@ func _process_chunk_rebuild_queue(max_count: int) -> void:
 	var started_at := Time.get_ticks_usec()
 	while built < max_count and not chunk_rebuild_queue.is_empty() and Time.get_ticks_usec() - started_at < CHUNK_REBUILD_BUDGET_USEC:
 		var chunk_key := String(chunk_rebuild_queue.pop_front())
+		var ready_at := int(chunk_rebuild_ready_msec.get(chunk_key, 0))
+		if ready_at > Time.get_ticks_msec():
+			chunk_rebuild_queue.append(chunk_key)
+			return
 		queued_chunk_rebuilds.erase(chunk_key)
+		chunk_rebuild_ready_msec.erase(chunk_key)
 		if not visible_chunk_keys.has(chunk_key):
 			continue
 		_rebuild_chunk(chunk_key)
@@ -1319,19 +1318,19 @@ func _process_chunk_rebuild_queue(max_count: int) -> void:
 func _rebuild_chunk(chunk_key: String) -> void:
 	_clear_chunk_meshes(chunk_key, false)
 	visible_chunk_keys[chunk_key] = true
-	var keys: Array = _visible_keys_for_chunk(chunk_key)
-	if keys.is_empty():
+	var visible_blocks: Dictionary = _visible_blocks_for_chunk(chunk_key)
+	if visible_blocks.is_empty():
 		return
 
 	var face_groups := {}
-	for key in keys:
+	for key in visible_blocks.keys():
 		var id: String = world[key]
-		var p := _parse_key(key)
+		var p: Vector3i = visible_blocks[key]
 		if not blocks.has(id):
 			continue
 		for face in range(6):
 			var d: Vector3i = NEIGHBOR_DIRS[face]
-			var neighbor_id := _get_block(p.x + d.x, p.y + d.y, p.z + d.z)
+			var neighbor_id := String(world.get(p + d, ""))
 			if _should_render_face(id, neighbor_id, face):
 				_append_face(face_groups, id, face, p)
 
@@ -1360,11 +1359,10 @@ func _rebuild_chunk(chunk_key: String) -> void:
 
 
 func _append_face(face_groups: Dictionary, id: String, face: int, pos: Vector3i) -> void:
-	var block: Dictionary = blocks[id]
-	var single_material := bool(block.get("singleMaterial", false))
+	var single_material := single_material_block_ids.has(id)
 	var group_key := id if single_material else "%s_%d" % [id, face]
 	if not face_groups.has(group_key):
-		var materials: Array = block["materials"]
+		var materials: Array = block_materials[id]
 		var material_index := 0 if single_material else face
 		face_groups[group_key] = {
 			"vertices": PackedVector3Array(),
@@ -1404,45 +1402,45 @@ func _append_face(face_groups: Dictionary, id: String, face: int, pos: Vector3i)
 
 
 func _should_render_face(id: String, neighbor_id: String, face: int) -> bool:
-	var block: Dictionary = blocks.get(id, {})
-	if bool(block.get("liquid", false)):
+	if liquid_block_ids.has(id):
 		return face == FACE_UP and neighbor_id != id
 	if neighbor_id == "":
 		return true
 	if neighbor_id == id:
 		return false
-	var neighbor: Dictionary = blocks.get(neighbor_id, {})
-	var block_is_clear := bool(block.get("transparent", false)) or bool(block.get("liquid", false))
-	var neighbor_is_clear := bool(neighbor.get("transparent", false)) or bool(neighbor.get("liquid", false))
+	var block_is_clear := transparent_block_ids.has(id)
+	var neighbor_is_clear := transparent_block_ids.has(neighbor_id) or liquid_block_ids.has(neighbor_id)
 	if block_is_clear:
-		return neighbor_is_clear or not bool(neighbor.get("solid", false))
+		return neighbor_is_clear or not solid_block_ids.has(neighbor_id)
 	return neighbor_is_clear
 
 
 func _is_visible_block(x: int, y: int, z: int, id: String) -> bool:
+	var pos := Vector3i(x, y, z)
 	for face in range(NEIGHBOR_DIRS.size()):
 		var d: Vector3i = NEIGHBOR_DIRS[face]
-		var neighbor_id := _get_block(x + d.x, y + d.y, z + d.z)
+		var neighbor_id := String(world.get(pos + d, ""))
 		if _should_render_face(id, neighbor_id, face):
 			return true
 	return false
 
 
-func _visible_keys_for_chunk(chunk_key: String) -> Array:
+func _visible_blocks_for_chunk(chunk_key: String) -> Dictionary:
 	if not chunk_visible_blocks.has(chunk_key):
 		_rebuild_visible_block_cache(chunk_key)
-	return chunk_visible_blocks.get(chunk_key, {}).keys()
+	return chunk_visible_blocks.get(chunk_key, {})
 
 
 func _rebuild_visible_block_cache(chunk_key: String) -> void:
 	var visible := {}
-	for key in chunk_blocks.get(chunk_key, {}).keys():
+	var block_map: Dictionary = chunk_blocks.get(chunk_key, {})
+	for key in block_map.keys():
 		var id := String(world.get(key, ""))
 		if id == "":
 			continue
-		var p := _parse_key(String(key))
+		var p: Vector3i = block_map[key]
 		if _is_visible_block(p.x, p.y, p.z, id):
-			visible[key] = true
+			visible[key] = p
 	if visible.is_empty():
 		chunk_visible_blocks.erase(chunk_key)
 	else:
@@ -1470,7 +1468,7 @@ func _refresh_single_block_visibility(pos: Vector3i) -> void:
 	if id != "" and _is_visible_block(pos.x, pos.y, pos.z, id):
 		if not chunk_visible_blocks.has(chunk_key):
 			chunk_visible_blocks[chunk_key] = {}
-		chunk_visible_blocks[chunk_key][key] = true
+		chunk_visible_blocks[chunk_key][key] = pos
 		return
 	if chunk_visible_blocks.has(chunk_key):
 		chunk_visible_blocks[chunk_key].erase(key)
@@ -1528,7 +1526,7 @@ func _highest_ground_y(x: int, z: int) -> int:
 func _highest_solid_y(x: int, z: int) -> int:
 	for y in range(int(worldgen.get("maxHeight", 24)) + 16, int(worldgen.get("minHeight", -16)) - 2, -1):
 		var id := _get_block(x, y, z)
-		if bool(blocks.get(id, {}).get("solid", false)):
+		if solid_block_ids.has(id):
 			return y
 	return int(worldgen.get("waterLevel", 8)) + 4
 
@@ -1651,9 +1649,8 @@ func _spawn_item_drop(id: String, amount: int, position: Vector3) -> void:
 
 
 func _item_drop_material(id: String) -> Material:
-	var block: Dictionary = blocks.get(id, {})
-	if block.has("materials"):
-		var materials: Array = block["materials"]
+	if block_materials.has(id):
+		var materials: Array = block_materials[id]
 		return materials[FACE_UP]
 	var mat := StandardMaterial3D.new()
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
@@ -1718,7 +1715,7 @@ func _can_occupy(pos: Vector3) -> bool:
 
 func _is_solid_at_point(x: float, y: float, z: float) -> bool:
 	var id := _get_block(floori(x + 0.5), floori(y + 0.5), floori(z + 0.5))
-	return bool(blocks.get(id, {}).get("solid", false))
+	return solid_block_ids.has(id)
 
 
 func _update_target() -> void:
@@ -1762,8 +1759,8 @@ func _voxel_raycast(max_distance: float):
 	var travelled := 0.0
 	var previous := pos
 	while travelled <= max_distance:
-		var id := _get_block(pos.x, pos.y, pos.z)
-		if id != "" and not bool(blocks.get(id, {}).get("liquid", false)):
+		var id := String(world.get(pos, ""))
+		if id != "" and not liquid_block_ids.has(id):
 			var normal := previous - pos
 			if normal == Vector3i.ZERO:
 				normal = _fallback_normal(direction)
@@ -1907,7 +1904,8 @@ func _begin_world_loading(mode: String, reset_world: bool) -> void:
 		_generate_world()
 	_spawn_player()
 	_rebuild_meshes()
-	loading_target_chunks = _desired_chunk_keys(_chunk_coords_for_world_position(camera.position))
+	loading_generation_chunks = _initial_generation_chunk_keys()
+	loading_display_chunks = _desired_chunk_keys(_chunk_coords_for_world_position(camera.position))
 	_update_loading_ui()
 
 
@@ -1924,28 +1922,31 @@ func _update_loading_state(delta: float) -> void:
 func _update_loading_ui() -> void:
 	if loading_bar == null:
 		return
-	var total := maxi(1, loading_target_chunks.size())
+	var total_generation := maxi(1, loading_generation_chunks.size())
+	var total_display := maxi(1, loading_display_chunks.size())
 	var generated := 0
 	var displayed := 0
-	for chunk_key in loading_target_chunks.keys():
+	for chunk_key in loading_generation_chunks.keys():
 		if generated_chunk_keys.has(chunk_key):
 			generated += 1
+	for chunk_key in loading_display_chunks.keys():
 		if chunk_nodes.has(chunk_key):
 			displayed += 1
-	var progress := clampf(float(generated + displayed) / float(total * 2), 0.0, 1.0)
+	var progress := clampf((float(generated) / float(total_generation)) * 0.86 + (float(displayed) / float(total_display)) * 0.14, 0.0, 1.0)
 	loading_bar.value = progress * 100.0
-	loading_detail_label.text = "Terrain %d/%d | Affichage %d/%d" % [generated, total, displayed, total]
+	loading_detail_label.text = "Carte %d/%d chunks | Spawn %d/%d affichés" % [generated, total_generation, displayed, total_display]
 
 
 func _initial_world_ready() -> bool:
 	if not active_chunk_generation.is_empty():
 		return false
-	for chunk_key in loading_target_chunks.keys():
+	for chunk_key in loading_generation_chunks.keys():
 		if not generated_chunk_keys.has(chunk_key):
 			return false
+	for chunk_key in loading_display_chunks.keys():
 		if not chunk_nodes.has(chunk_key):
 			return false
-	return chunk_generation_queue.is_empty() and chunk_rebuild_queue.is_empty()
+	return chunk_generation_queue.is_empty()
 
 
 func _finish_world_loading() -> void:
@@ -2039,7 +2040,7 @@ func _select_slot(index: int) -> void:
 func _assign_hotbar_from_inventory(id: String) -> void:
 	if id == "":
 		return
-	if not bool(blocks.get(id, {}).get("placeable", true)):
+	if not placeable_block_ids.has(id):
 		message = "%s ne peut pas être placé dans la barre rapide." % _block_name(id)
 		_update_hud()
 		return
@@ -2057,7 +2058,7 @@ func _selected_block_id() -> String:
 	if hotbar.is_empty() or selected_slot >= hotbar.size():
 		return ""
 	var id := String(hotbar[selected_slot])
-	if not bool(blocks.get(id, {}).get("placeable", true)):
+	if not placeable_block_ids.has(id):
 		message = "%s ne se pose pas comme bloc." % _block_name(id)
 		_update_hud()
 		return ""
@@ -2238,7 +2239,13 @@ func _set_generated_block(x: int, y: int, z: int, id: String, chunk_key: String)
 	world[key] = id
 	if not chunk_blocks.has(chunk_key):
 		chunk_blocks[chunk_key] = {}
-	chunk_blocks[chunk_key][key] = true
+	chunk_blocks[chunk_key][key] = Vector3i(x, y, z)
+
+
+func _set_generated_block_fast(x: int, y: int, z: int, id: String, block_map: Dictionary) -> void:
+	var key := _block_key(x, y, z)
+	world[key] = id
+	block_map[key] = Vector3i(x, y, z)
 
 
 func _set_block(x: int, y: int, z: int, id: String) -> void:
@@ -2261,7 +2268,7 @@ func _set_block(x: int, y: int, z: int, id: String) -> void:
 		world[key] = id
 		if not chunk_blocks.has(chunk_key):
 			chunk_blocks[chunk_key] = {}
-		chunk_blocks[chunk_key][key] = true
+		chunk_blocks[chunk_key][key] = pos
 	if not bulk_world_update:
 		_refresh_visibility_around(pos)
 
@@ -2274,8 +2281,8 @@ func _get_block_at_point(point: Vector3) -> String:
 	return _get_block(floori(point.x + 0.5), floori(point.y + 0.5), floori(point.z + 0.5))
 
 
-func _block_key(x: int, y: int, z: int) -> String:
-	return "%d,%d,%d" % [x, y, z]
+func _block_key(x: int, y: int, z: int) -> Vector3i:
+	return Vector3i(x, y, z)
 
 
 func _chunk_key_from_coords(cx: int, cz: int) -> String:
@@ -2289,8 +2296,3 @@ func _parse_chunk_key(key: String) -> Vector2i:
 
 func _chunk_coords_for_world_position(pos: Vector3) -> Vector2i:
 	return Vector2i(floori(pos.x / float(CHUNK_SIZE)), floori(pos.z / float(CHUNK_SIZE)))
-
-
-func _parse_key(key: String) -> Vector3i:
-	var parts := key.split(",")
-	return Vector3i(int(parts[0]), int(parts[1]), int(parts[2]))

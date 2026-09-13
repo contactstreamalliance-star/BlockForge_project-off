@@ -10,6 +10,7 @@
 - `systems/crafting_book.gd`: loads editable recipes from `assets/recipes.json`.
 - `utils/`: generic helpers that can be reused anywhere.
 - `world/`: voxel-specific helpers for block materials, selection, terrain math and future chunk/world code.
+- `world/worldgen_v2.gd`: terrain height, biomes, caves, ores and natural block selection.
 
 When adding a feature, prefer a small new file in the matching folder instead of growing `main.gd`.
 

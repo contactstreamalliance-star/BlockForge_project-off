@@ -1,6 +1,159 @@
 {
   "updates": [
     {
+      "version": "0.4.9-godot",
+      "title": "Grottes moins immenses et monde agrandi",
+      "date": "2026-09-13",
+      "description": "Les sous-sols ne doivent plus être dominés par d'immenses grottes verticales. Le monde est aussi agrandi pour atteindre 128 chunks de côté.",
+      "added": [
+        "Monde porté à 128 chunks de côté avec une taille configurée à 2047 blocs.",
+        "Masques verticaux pour limiter la hauteur des tunnels et des salles.",
+        "Filtre supplémentaire pour rendre les grandes salles beaucoup plus rares."
+      ],
+      "changed": [
+        "La densité globale des grottes est réduite.",
+        "Les tunnels principaux demandent maintenant une bande verticale plus contrôlée.",
+        "Les petites grottes restent les plus fréquentes.",
+        "Les grottes moyennes demandent plus de profondeur.",
+        "Les grandes grottes demandent beaucoup de profondeur, un seuil très haut et plusieurs filtres de rareté.",
+        "Les grottes évitent davantage la surface et le bas extrême du monde."
+      ],
+      "removed": [
+        "Grottes souterraines trop hautes qui ouvraient d'immenses vides presque partout.",
+        "Rareté trop faible des grandes salles."
+      ]
+    },
+    {
+      "version": "0.4.8-godot",
+      "title": "Tailles de grottes hiérarchisées",
+      "date": "2026-09-13",
+      "description": "La génération des grottes suit maintenant une rareté progressive: petites grottes plus fréquentes, moyennes plus rares et grandes grottes très rares.",
+      "added": [
+        "Trois seuils séparés pour les petites, moyennes et grandes grottes.",
+        "Paramètres modifiables dans assets/worldgen.json: caveSmallRoomThreshold, caveMediumRoomThreshold et caveLargeRoomThreshold."
+      ],
+      "changed": [
+        "Les petites cavités utilisent un bruit plus serré pour créer plus de petites formes souterraines.",
+        "Les grottes moyennes demandent plus de profondeur et un tirage plus rare.",
+        "Les grandes salles demandent beaucoup de profondeur, un seuil plus haut et un second filtre de rareté.",
+        "Les grandes grottes restent possibles, mais ne doivent plus dominer la génération."
+      ],
+      "removed": [
+        "Système de salles souterraines avec une seule rareté pour toutes les tailles."
+      ]
+    },
+    {
+      "version": "0.4.7-godot",
+      "title": "Grottes Worldgen V2 retravaillées",
+      "date": "2026-09-13",
+      "description": "Le système de grottes du Worldgen V2 est revu pour produire des tunnels plus cohérents, des embranchements plus naturels et des salles profondes mieux contrôlées.",
+      "added": [
+        "Tunnels principaux plus lisibles.",
+        "Branches secondaires connectées aux tunnels au lieu de cavités trop aléatoires.",
+        "Poches profondes réservées aux zones souterraines plus basses.",
+        "Influence du biome: montagnes et zones rocheuses ouvrent un peu plus de grottes.",
+        "Nouveaux paramètres modifiables dans assets/worldgen.json: caveSurfaceBuffer, caveFloorBuffer, caveTunnelScale, caveBranchScale et caveRoomScale."
+      ],
+      "changed": [
+        "Le spawn est davantage protégé contre les trous proches du départ.",
+        "Les grottes évitent mieux la surface pour limiter les terrains coupés trop brutalement.",
+        "Les grandes salles apparaissent surtout en profondeur.",
+        "Le calcul des grottes utilise un premier filtre avant de vérifier les branches et les salles."
+      ],
+      "removed": [
+        "Grottes trop uniformes basées sur une seule décision tunnel/poche.",
+        "Ouvertures trop proches de la surface dans plusieurs zones."
+      ]
+    },
+    {
+      "version": "0.4.6-godot",
+      "title": "Optimisations regroupées du moteur voxel",
+      "date": "2026-09-13",
+      "description": "Regroupement des passes d'optimisation pour garder les Patch Notes plus lisibles: génération, chunks, arbres, spam clic, rendu, collisions et stockage des blocs sont résumés dans une seule entrée.",
+      "added": [
+        "Découpage du monde en chunks de 16 x 16 blocs.",
+        "Files d'attente pour générer et reconstruire les chunks progressivement.",
+        "Budgets de temps par frame pour éviter les gros blocages.",
+        "Cache des blocs réellement visibles pour éviter de reconstruire les blocs cachés.",
+        "Cache des textures PNG, des matériaux et des propriétés de blocs.",
+        "Raycast voxel direct pour viser les blocs avec moins de tests.",
+        "Caches rapides pour les blocs solides, transparents, liquides, posables et leurs matériaux.",
+        "Stockage des blocs par coordonnées Vector3i au lieu de clés texte.",
+        "Lecture directe des voisins pendant la reconstruction des chunks.",
+        "Génération d'arbres étalée dans les jobs de chunks."
+      ],
+      "changed": [
+        "La génération de carte est étalée sur plusieurs images au lieu d'être faite en un seul gros calcul.",
+        "Le cassage et la pose reconstruisent seulement les chunks réellement touchés.",
+        "Les reconstructions déclenchées par le spam clic sont regroupées avant d'être appliquées.",
+        "La génération lit moins souvent les réglages du monde et évite les calculs de grottes inutiles.",
+        "Les arbres marquent les chunks à rafraîchir sans recalcul brutal immédiat.",
+        "Les collisions, la visée des blocs, les objets au sol et le HUD font moins de calculs répétés.",
+        "La barre d'inventaire met à jour ses textes sans recréer toute son interface à chaque action.",
+        "Le mode par défaut ne pré-génère plus toute la carte bloc par bloc au lancement afin d'éviter les gros blocages.",
+        "L'option pregenerateFullWorldOnLoad reste disponible dans assets/worldgen.json pour forcer l'ancien comportement.",
+        "Les collisions, la visée des blocs et le rendu des faces utilisent les caches rapides au lieu de relire les dictionnaires complets."
+      ],
+      "removed": [
+        "Reconstruction immédiate de plusieurs chunks en une seule frame.",
+        "Génération complète d'un chunk en une seule frame pendant l'exploration.",
+        "Raycast par petits pas répétés pour la sélection de blocs.",
+        "Reconstruction systématique des chunks voisins quand le bloc modifié n'est pas sur une bordure.",
+        "Reconstruction immédiate trop fréquente du même chunk pendant les rafales de clics.",
+        "Appels de grottes inutiles sur des blocs qui ne pouvaient jamais devenir de l'air.",
+        "Création massive de clés texte x,y,z pour chaque bloc généré.",
+        "Parsing de coordonnées texte pendant les reconstructions de chunks.",
+        "Pré-génération complète brute activée par défaut."
+      ]
+    },
+    {
+      "version": "0.4.4-godot",
+      "title": "Pré-génération complète au chargement",
+      "date": "2026-09-13",
+      "description": "La création ou le chargement d'un monde prépare maintenant toute la carte pendant l'écran de chargement, afin de réduire les à-coups de génération pendant l'exploration.",
+      "added": [
+        "Option pregenerateFullWorldOnLoad dans assets/worldgen.json.",
+        "Pré-génération de tous les chunks de la carte avant l'arrivée en jeu.",
+        "Progression de chargement séparant la carte générée et les chunks du spawn affichés.",
+        "Ordre de génération centré sur le spawn avant de préparer les bords du monde."
+      ],
+      "changed": [
+        "Le chargement initial est plus complet et peut durer plus longtemps selon la taille du monde.",
+        "Les chunks éloignés sont générés en données seulement, sans afficher toute la carte d'un coup.",
+        "Le jeu continue d'afficher uniquement la zone utile autour du joueur pour éviter un gros freeze de rendu."
+      ],
+      "removed": [
+        "Génération du reste du monde seulement au moment où le joueur s'en approche."
+      ]
+    },
+    {
+      "version": "0.4.2-godot",
+      "title": "Worldgen V2 séparé et blocs essentiels",
+      "date": "2026-09-13",
+      "description": "Le Worldgen V2 est séparé dans son propre module et la priorité 3 ajoute les premiers blocs naturels essentiels pour enrichir le terrain.",
+      "added": [
+        "Nouveau module src/world/worldgen_v2.gd pour isoler la génération du monde.",
+        "Documentation docs/WORLDGEN_CSHARP.md pour préparer une future migration C# avec Godot .NET.",
+        "Roche profonde.",
+        "Gravier.",
+        "Terre rocheuse.",
+        "Cuivre brut et minerai de cuivre.",
+        "Minerai rare et éclat rare.",
+        "Sable humide.",
+        "Eau peu profonde."
+      ],
+      "changed": [
+        "La logique de hauteur, biomes, minerais, grottes et densité des arbres sort du fichier principal.",
+        "Les couches profondes utilisent maintenant la roche profonde.",
+        "Les côtes peuvent générer du sable humide.",
+        "Les zones rocheuses et sèches utilisent davantage la terre rocheuse, la pierre et le gravier.",
+        "Les bords d'eau utilisent l'eau peu profonde quand le terrain est proche de la surface."
+      ],
+      "removed": [
+        "Logique Worldgen V2 lourde directement écrite dans main.gd."
+      ]
+    },
+    {
       "version": "0.4.1-godot",
       "title": "Chargement stable du monde",
       "date": "2026-09-13",
@@ -43,23 +196,6 @@
       ]
     },
     {
-      "version": "0.3.11-godot",
-      "title": "Correctif anti-freeze des arbres",
-      "date": "2026-09-10",
-      "description": "Le correctif des feuilles invisibles est rendu plus léger pour éviter les freezes pendant la génération des arbres.",
-      "added": [
-        "Invalidation légère du cache de visibilité des chunks touchés par les arbres."
-      ],
-      "changed": [
-        "Les arbres sont générés en mode lot sans recalculer la visibilité autour de chaque feuille.",
-        "Les chunks touchés par les feuilles sont maintenant reconstruits par la file normale au lieu d'être recalculés immédiatement.",
-        "La correction des feuilles invisibles garde l'affichage correct sans bloquer la génération."
-      ],
-      "removed": [
-        "Recalcul immédiat du cache visible de tous les chunks touchés par un arbre."
-      ]
-    },
-    {
       "version": "0.3.10-godot",
       "title": "Correction des feuilles invisibles",
       "date": "2026-09-10",
@@ -94,27 +230,6 @@
       ],
       "removed": [
         "Stockage de survie illimité."
-      ]
-    },
-    {
-      "version": "0.3.8-godot",
-      "title": "Optimisation globale anti-freeze",
-      "date": "2026-09-10",
-      "description": "Nouvelle passe d'optimisation centrée sur les freezes de génération, de reconstruction de chunks et de spam clic.",
-      "added": [
-        "Budget de temps par frame pour la génération et la reconstruction des chunks.",
-        "Raycast voxel direct pour viser les blocs avec beaucoup moins de tests.",
-        "Cache des coins de faces et des styles de barre rapide."
-      ],
-      "changed": [
-        "La génération de chunks relit moins souvent les réglages du monde.",
-        "Le cassage et la pose reconstruisent seulement les chunks réellement touchés.",
-        "Les objets au sol utilisent moins de calculs de distance et de temps.",
-        "La reconstruction de mesh évite plusieurs allocations répétées."
-      ],
-      "removed": [
-        "Reconstruction systématique des quatre chunks voisins quand le bloc modifié n'est pas sur une bordure.",
-        "Raycast par petits pas répétés pour la sélection de blocs."
       ]
     },
     {
@@ -154,34 +269,6 @@
       ],
       "removed": [
         "Import direct du pack Godot-Inventory dans le projet actif."
-      ]
-    },
-    {
-      "version": "0.3.5-godot",
-      "title": "Optimisations regroupées",
-      "date": "2026-09-10",
-      "description": "Regroupement de toutes les passes d'optimisation dans une seule note pour garder un historique plus lisible.",
-      "added": [
-        "Découpage du monde en chunks de 16 x 16 blocs.",
-        "File d'attente pour reconstruire les chunks progressivement.",
-        "File d'attente pour générer les chunks proches progressivement.",
-        "Génération progressive par colonnes à l'intérieur de chaque chunk.",
-        "Cache des blocs réellement visibles pour éviter de reconstruire les blocs cachés.",
-        "Cache des textures PNG et matériaux mieux partagés pour les blocs à texture unique.",
-        "Cadence contrôlée pour le cassage et la pose de blocs."
-      ],
-      "changed": [
-        "La génération de carte est étalée sur plusieurs images au lieu d'être faite en un seul gros calcul.",
-        "Les chunks déjà affichés restent visibles quand le joueur s'éloigne.",
-        "La zone de spawn écrit moins de données inutiles.",
-        "La reconstruction d'un chunk utilise les blocs visibles au lieu de scanner tous les blocs pleins.",
-        "La barre d'inventaire met à jour ses textes sans recréer toute son interface à chaque action.",
-        "Le bloc visé, les objets au sol, les collisions et le HUD font moins de calculs répétés."
-      ],
-      "removed": [
-        "Reconstruction immédiate de plusieurs chunks en une seule frame.",
-        "Génération complète d'un chunk en une seule frame pendant l'exploration.",
-        "Écritures de blocs et rafraîchissements d'interface inutiles."
       ]
     },
     {
