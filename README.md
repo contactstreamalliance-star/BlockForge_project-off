@@ -47,3 +47,7 @@ La 0.3.9 retravaille l'inventaire de survie avec 36 cases limitées, des piles d
 La 0.3.10 corrige les feuilles d'arbres qui pouvaient rester invisibles quand un arbre débordait dans un chunk voisin déjà affiché.
 
 La 0.3.11 allège ce correctif: les arbres marquent les chunks à rafraîchir sans recalcul brutal immédiat, pour réduire les freezes pendant la génération.
+
+La 0.4.0 commence le Worldgen V2: monde plus grand, hauteur et profondeur augmentées, biomes simples, relief multi-couches, grottes plus profondes et paramètres de génération plus faciles à modifier.
+
+La 0.4.1 ajoute un écran de chargement de monde: le jeu prépare les chunks proches du spawn avant de donner le contrôle au joueur, et le menu principal ne génère plus le monde en arrière-plan avant le choix du mode.

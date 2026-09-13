@@ -1,6 +1,48 @@
 {
   "updates": [
     {
+      "version": "0.4.1-godot",
+      "title": "Chargement stable du monde",
+      "date": "2026-09-13",
+      "description": "Le démarrage de partie passe maintenant par un écran de chargement pour préparer les chunks proches avant de donner le contrôle au joueur.",
+      "added": [
+        "Écran de chargement quand une partie Survie, Créatif ou Nouveau monde prépare le terrain.",
+        "Barre de progression basée sur les chunks générés et affichés autour du spawn.",
+        "Phase d'amorçage avant l'arrivée en jeu pour éviter de voir le monde se construire brutalement."
+      ],
+      "changed": [
+        "Le menu principal ne génère plus automatiquement le monde avant que le joueur choisisse un mode.",
+        "Le joueur reçoit le contrôle seulement quand les chunks proches du spawn sont prêts.",
+        "La génération traite un peu plus de terrain pendant l'écran de chargement, sans activer le gameplay.",
+        "Les réglages de grottes les plus utilisés sont copiés dans chaque job de chunk pour réduire les lectures répétées."
+      ],
+      "removed": [
+        "Pré-génération silencieuse du monde dès l'ouverture du menu principal."
+      ]
+    },
+    {
+      "version": "0.4.0-godot",
+      "title": "Worldgen V2",
+      "date": "2026-09-13",
+      "description": "Première base du Worldgen V2 avec une carte plus grande, des biomes simples, un relief plus naturel et des grottes plus profondes.",
+      "added": [
+        "Mode de terrain worldgen_v2 dans assets/worldgen.json.",
+        "Biomes simples: prairie, forêt, côte, zone sèche, zone rocheuse et montagne.",
+        "Cache des hauteurs de terrain et des biomes pour réduire les calculs répétés.",
+        "Paramètres modifiables pour l'échelle des biomes, le détail du relief, le mélange du spawn et les seuils de grottes."
+      ],
+      "changed": [
+        "La taille du monde passe à 192 blocs de côté avec plus de hauteur et plus de profondeur.",
+        "Le relief combine maintenant continents, collines, détails et crêtes de montagne.",
+        "Le spawn garde une zone protégée et plus douce avant de rejoindre le terrain naturel.",
+        "Les grottes sont plus profondes et utilisent plusieurs couches de bruit pour créer tunnels et poches.",
+        "La densité des arbres dépend maintenant du biome."
+      ],
+      "removed": [
+        "Relief unique trop uniforme pour toutes les zones du monde."
+      ]
+    },
+    {
       "version": "0.3.11-godot",
       "title": "Correctif anti-freeze des arbres",
       "date": "2026-09-10",

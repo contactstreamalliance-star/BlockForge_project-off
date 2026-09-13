@@ -1,9 +1,9 @@
 extends Node3D
 
-const BLOCKS_PATH := "res://assets/blocks.json"
+const BLOCKS_PATH := "res://assets/blocks.json" #test
 const WORLDGEN_PATH := "res://assets/worldgen.json"
 const SAVE_PATH := "user://blockforge_alpha_world.json"
-const VERSION_LABEL := "0.3.11"
+const VERSION_LABEL := "0.4.1"
 const EYE_HEIGHT := 1.62
 const PLAYER_RADIUS := 0.32
 const PLAYER_HEIGHT := 1.82
@@ -25,6 +25,7 @@ const CHUNK_GENERATIONS_PER_TICK := 1
 const CHUNK_GENERATION_COLUMNS_PER_TICK := 6
 const CHUNK_GENERATION_BUDGET_USEC := 1800
 const CHUNK_REBUILD_BUDGET_USEC := 2600
+const INITIAL_LOAD_MIN_TIME := 0.35
 const TARGET_REFRESH_TIME := 0.08
 const DROPPED_ITEM_REFRESH_TIME := 0.08
 const BLOCK_ACTION_COOLDOWN := 0.09
@@ -67,6 +68,10 @@ var inventory_hotbar_box: HBoxContainer
 var inventory_grid: GridContainer
 var recipes_list: VBoxContainer
 var game_over_layer: CanvasLayer
+var loading_layer: CanvasLayer
+var loading_title_label: Label
+var loading_detail_label: Label
+var loading_bar: ProgressBar
 var crosshair: Control
 var selected_outline: MeshInstance3D
 var audio_library
@@ -91,6 +96,13 @@ var queued_chunk_generations := {}
 var active_chunk_generation := {}
 var chunk_rebuild_queue := []
 var queued_chunk_rebuilds := {}
+var terrain_height_cache := {}
+var biome_cache := {}
+var loading_active := false
+var loading_timer := 0.0
+var loading_target_chunks := {}
+var pending_start_mode := MODE_SURVIVAL
+var pending_world_reset := false
 var selected_slot := 0
 var selected_target = null
 var worldgen := {}
@@ -140,15 +152,17 @@ func _ready() -> void:
 	_setup_audio()
 	_setup_ui()
 	_setup_world_nodes()
-	_generate_world()
-	_spawn_player()
-	_rebuild_meshes()
 	_update_hud()
 
 
 func _physics_process(delta: float) -> void:
-	_process_chunk_generation_queue(CHUNK_GENERATIONS_PER_TICK)
+	var generation_passes := 2 if loading_active else 1
+	for i in range(generation_passes):
+		_process_chunk_generation_queue(CHUNK_GENERATIONS_PER_TICK)
 	_process_chunk_rebuild_queue(CHUNK_REBUILDS_PER_TICK)
+	if loading_active:
+		_update_loading_state(delta)
+		return
 	if not game_active:
 		return
 	block_action_timer = maxf(0.0, block_action_timer - delta)
@@ -444,6 +458,7 @@ func _setup_ui() -> void:
 	_rebuild_hotbar()
 	_setup_inventory_ui()
 	_setup_game_over_ui()
+	_setup_loading_ui()
 	_setup_patch_notes_ui()
 	_sync_hud_visibility()
 
@@ -482,6 +497,55 @@ func _setup_patch_notes_ui() -> void:
 	patch_notes_controller.closed.connect(_on_patch_notes_closed)
 	add_child(patch_notes_controller)
 	patch_notes_controller.setup()
+
+
+func _setup_loading_ui() -> void:
+	loading_layer = CanvasLayer.new()
+	loading_layer.name = "LoadingLayer"
+	loading_layer.visible = false
+	add_child(loading_layer)
+
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	loading_layer.add_child(root)
+
+	var background := ColorRect.new()
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	background.color = Color(0.025, 0.035, 0.032, 0.96)
+	root.add_child(background)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(560, 230)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 14)
+	panel.add_child(box)
+
+	loading_title_label = Label.new()
+	loading_title_label.text = "Création du monde"
+	loading_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loading_title_label.add_theme_font_size_override("font_size", 28)
+	box.add_child(loading_title_label)
+
+	loading_detail_label = Label.new()
+	loading_detail_label.text = "Préparation du terrain..."
+	loading_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	loading_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	loading_detail_label.custom_minimum_size = Vector2(480, 46)
+	box.add_child(loading_detail_label)
+
+	loading_bar = ProgressBar.new()
+	loading_bar.custom_minimum_size = Vector2(480, 22)
+	loading_bar.min_value = 0.0
+	loading_bar.max_value = 100.0
+	loading_bar.value = 0.0
+	box.add_child(loading_bar)
 
 
 func _setup_inventory_ui() -> void:
@@ -751,6 +815,8 @@ func _generate_world() -> void:
 	chunk_generation_queue.clear()
 	queued_chunk_generations.clear()
 	active_chunk_generation.clear()
+	terrain_height_cache.clear()
+	biome_cache.clear()
 	world_seed = int(worldgen.get("seed", 1))
 	if bool(worldgen.get("randomSeedOnStart", false)):
 		world_seed += randi_range(0, 999999)
@@ -804,7 +870,11 @@ func _create_chunk_generation_job(chunk_key: String) -> Dictionary:
 		"water_level": int(worldgen.get("waterLevel", 8)),
 		"water_enabled": bool(worldgen.get("waterEnabled", false)),
 		"ore_chance": float(worldgen.get("oreChance", 0.016)),
-		"cave_chance": float(worldgen.get("caveChance", 0.14))
+		"cave_chance": float(worldgen.get("caveChance", 0.14)),
+		"tree_chance": float(worldgen.get("treeChance", 0.006)),
+		"spawn_radius": int(worldgen.get("spawnPlateauRadius", 11)),
+		"cave_tunnel_threshold": float(worldgen.get("caveTunnelThreshold", 0.72)),
+		"cave_pocket_threshold": float(worldgen.get("cavePocketThreshold", 0.82))
 	}
 
 
@@ -852,25 +922,35 @@ func _generate_chunk_column(job: Dictionary, x: int, z: int) -> void:
 	var water_enabled := bool(job["water_enabled"])
 	var ore_chance := float(job["ore_chance"])
 	var cave_chance := float(job["cave_chance"])
+	var tree_chance := float(job["tree_chance"])
+	var spawn_radius := int(job["spawn_radius"])
+	var cave_tunnel_threshold := float(job["cave_tunnel_threshold"])
+	var cave_pocket_threshold := float(job["cave_pocket_threshold"])
 	var chunk_key := String(job["chunk_key"])
+	var biome := _biome_at(x, z)
 	for y in range(min_y, height + 1):
-		if _is_cave_air_fast(x, y, z, height, min_y, cave_chance):
+		if _is_cave_air_fast(x, y, z, height, min_y, cave_chance, spawn_radius, cave_tunnel_threshold, cave_pocket_threshold):
 			continue
-		_set_generated_block(x, y, z, _natural_block_id_fast(x, y, z, height, water_level, min_y, ore_chance), chunk_key)
+		_set_generated_block(x, y, z, _natural_block_id_fast(x, y, z, height, water_level, min_y, ore_chance, biome), chunk_key)
 
 	if water_enabled and height < water_level:
 		for y in range(height + 1, water_level + 1):
 			_set_generated_block(x, y, z, "water", chunk_key)
 
-	if height > water_level + 2 and (abs(x) > 8 or abs(z) > 8) and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < float(worldgen.get("treeChance", 0.006)):
+	var outside_spawn: bool = abs(x) > spawn_radius + 4 or abs(z) > spawn_radius + 4
+	if height > water_level + 2 and outside_spawn and VoxelMathScript.hash2(x * 3, z * 3, world_seed) < _tree_chance_for_biome(biome, tree_chance):
 		var tree_spots: Array = job["tree_spots"]
 		tree_spots.append(Vector3i(x, height + 1, z))
 		job["tree_spots"] = tree_spots
 
 
 func _terrain_height(x: int, z: int) -> int:
+	var cache_key: String = "%d,%d" % [x, z]
+	if terrain_height_cache.has(cache_key):
+		return int(terrain_height_cache[cache_key])
 	var water_level := int(worldgen.get("waterLevel", 8))
 	var max_height := int(worldgen.get("maxHeight", 24))
+	var min_height := int(worldgen.get("minHeight", -16))
 	var plateau_radius := int(worldgen.get("spawnPlateauRadius", 13))
 	var plateau_height := int(worldgen.get("spawnPlateauHeight", water_level + 4))
 	if String(worldgen.get("terrainMode", "")) == "showcase_flat":
@@ -878,29 +958,125 @@ func _terrain_height(x: int, z: int) -> int:
 	var dist: int = maxi(abs(x), abs(z))
 	var hill_strength := float(worldgen.get("hillStrength", 7.0))
 	var mountain_strength := float(worldgen.get("mountainStrength", 16.0))
-	var broad: float = VoxelMathScript.value_noise(x * 0.026, z * 0.026, world_seed)
-	var hills: float = VoxelMathScript.value_noise(x * 0.075 + 90.0, z * 0.075 - 27.0, world_seed)
-	var detail: float = VoxelMathScript.value_noise(x * 0.18 - 18.0, z * 0.18 + 44.0, world_seed) - 0.5
-	var mountains: float = pow(maxf(0.0, broad - 0.56), 1.55) * mountain_strength
-	var natural: float = float(water_level + 5) + (hills - 0.48) * hill_strength + detail * 3.0 + mountains
+	var detail_strength: float = float(worldgen.get("detailStrength", 3.0))
+	var biome: String = _biome_at(x, z)
+	var broad: float = VoxelMathScript.value_noise(x * 0.018, z * 0.018, world_seed)
+	var continent: float = VoxelMathScript.value_noise(x * 0.009 + 20.0, z * 0.009 - 80.0, world_seed + 7)
+	var hills: float = VoxelMathScript.value_noise(x * 0.058 + 90.0, z * 0.058 - 27.0, world_seed + 11)
+	var detail: float = VoxelMathScript.value_noise(x * 0.17 - 18.0, z * 0.17 + 44.0, world_seed + 23) - 0.5
+	var ridge: float = absf(VoxelMathScript.value_noise(x * 0.032 - 200.0, z * 0.032 + 140.0, world_seed + 41) - 0.5) * 2.0
+	var biome_lift: float = _biome_height_offset(biome)
+	var biome_hills: float = _biome_hill_multiplier(biome)
+	var mountains: float = pow(maxf(0.0, broad - 0.52), 1.42) * mountain_strength
+	if biome == "mountain":
+		mountains += pow(maxf(0.0, ridge - 0.34), 1.18) * mountain_strength * 0.82
+	elif biome == "rocky":
+		mountains += pow(maxf(0.0, ridge - 0.42), 1.35) * mountain_strength * 0.38
+	var shore_drop := 0.0
+	if biome == "coast":
+		shore_drop = -4.0
+	var natural: float = float(water_level + 5) + (continent - 0.44) * 11.0 + (hills - 0.46) * hill_strength * biome_hills + detail * detail_strength + mountains + biome_lift + shore_drop
 	if dist <= plateau_radius:
+		terrain_height_cache[cache_key] = plateau_height
 		return plateau_height
-	var blend: float = clampf(float(dist - plateau_radius) / 10.0, 0.0, 1.0)
-	return clampi(roundi(lerpf(float(plateau_height), natural, blend)), 3, max_height)
+	var blend_distance: float = float(worldgen.get("plateauBlendDistance", 10.0))
+	var blend: float = clampf(float(dist - plateau_radius) / maxf(1.0, blend_distance), 0.0, 1.0)
+	var result: int = clampi(roundi(lerpf(float(plateau_height), natural, blend)), min_height + 6, max_height)
+	terrain_height_cache[cache_key] = result
+	return result
+
+
+func _biome_at(x: int, z: int) -> String:
+	var cache_key: String = "%d,%d" % [x, z]
+	if biome_cache.has(cache_key):
+		return String(biome_cache[cache_key])
+	var scale := float(worldgen.get("biomeScale", 0.018))
+	var heat: float = VoxelMathScript.value_noise(x * scale + 120.0, z * scale - 80.0, world_seed + 101)
+	var moisture: float = VoxelMathScript.value_noise(x * scale - 240.0, z * scale + 160.0, world_seed + 203)
+	var ridge: float = VoxelMathScript.value_noise(x * scale * 1.5, z * scale * 1.5, world_seed + 307)
+	var water_level := int(worldgen.get("waterLevel", 8))
+	var quick_height: float = float(water_level + 5) + (VoxelMathScript.value_noise(x * 0.009 + 20.0, z * 0.009 - 80.0, world_seed + 7) - 0.44) * 11.0
+	var biome: String = "meadow"
+	if quick_height <= float(water_level + 1):
+		biome = "coast"
+	elif ridge > 0.76:
+		biome = "mountain"
+	elif moisture > 0.62 and heat > 0.28:
+		biome = "forest"
+	elif moisture < 0.33 and heat > 0.55:
+		biome = "dry"
+	elif ridge > 0.58:
+		biome = "rocky"
+	biome_cache[cache_key] = biome
+	return biome
+
+
+func _biome_height_offset(biome: String) -> float:
+	if biome == "mountain":
+		return 7.0
+	if biome == "rocky":
+		return 2.5
+	if biome == "dry":
+		return -1.5
+	if biome == "forest":
+		return 1.0
+	if biome == "coast":
+		return -3.0
+	return 0.0
+
+
+func _biome_hill_multiplier(biome: String) -> float:
+	if biome == "mountain":
+		return 1.45
+	if biome == "rocky":
+		return 1.25
+	if biome == "coast":
+		return 0.45
+	if biome == "dry":
+		return 0.72
+	return 1.0
+
+
+func _tree_chance_for_biome(biome: String, base_chance: float) -> float:
+	if biome == "forest":
+		return base_chance * 2.8
+	if biome == "meadow":
+		return base_chance
+	if biome == "coast":
+		return base_chance * 0.28
+	if biome == "dry":
+		return base_chance * 0.18
+	if biome == "rocky":
+		return base_chance * 0.35
+	if biome == "mountain":
+		return base_chance * 0.12
+	return base_chance
 
 
 func _natural_block_id(x: int, y: int, z: int, height: int, water_level: int) -> String:
-	return _natural_block_id_fast(x, y, z, height, water_level, int(worldgen.get("minHeight", -16)), float(worldgen.get("oreChance", 0.016)))
+	return _natural_block_id_fast(x, y, z, height, water_level, int(worldgen.get("minHeight", -16)), float(worldgen.get("oreChance", 0.016)), _biome_at(x, z))
 
 
-func _natural_block_id_fast(x: int, y: int, z: int, height: int, water_level: int, min_y: int, ore_chance: float) -> String:
+func _natural_block_id_fast(x: int, y: int, z: int, height: int, water_level: int, min_y: int, ore_chance: float, biome: String = "meadow") -> String:
 	if y == height:
 		if height <= water_level + 1:
 			return "sand" if VoxelMathScript.hash2(x, z, world_seed + 41) > 0.18 else "clay"
+		if biome == "dry":
+			return "sand" if VoxelMathScript.hash2(x, z, world_seed + 141) > 0.35 else "dirt"
+		if biome == "mountain" and height > water_level + 22:
+			return "stone" if VoxelMathScript.hash2(x, z, world_seed + 151) > 0.22 else "granite"
+		if biome == "rocky" and VoxelMathScript.hash2(x, z, world_seed + 161) > 0.48:
+			return "stone"
 		return "grass"
 	if y > height - 4:
 		if height <= water_level + 2:
 			return "sand" if VoxelMathScript.hash3(x, y, z, world_seed + 82) > 0.18 else "clay"
+		if biome == "dry":
+			return "sand" if y > height - 3 else "dirt"
+		if biome == "mountain" and height > water_level + 22:
+			return "stone"
+		if biome == "rocky":
+			return "stone" if y > height - 2 else "dirt"
 		return "dirt"
 	var ore := _ore_block_id_fast(x, y, z, ore_chance)
 	if ore != "":
@@ -929,16 +1105,23 @@ func _ore_block_id_fast(x: int, y: int, z: int, chance: float) -> String:
 func _is_cave_air(x: int, y: int, z: int, surface_y: int) -> bool:
 	var min_y := int(worldgen.get("minHeight", -16))
 	var cave_chance := float(worldgen.get("caveChance", 0.14))
-	return _is_cave_air_fast(x, y, z, surface_y, min_y, cave_chance)
+	var spawn_radius := int(worldgen.get("spawnPlateauRadius", 11))
+	var tunnel_threshold := float(worldgen.get("caveTunnelThreshold", 0.72))
+	var pocket_threshold := float(worldgen.get("cavePocketThreshold", 0.82))
+	return _is_cave_air_fast(x, y, z, surface_y, min_y, cave_chance, spawn_radius, tunnel_threshold, pocket_threshold)
 
 
-func _is_cave_air_fast(x: int, y: int, z: int, surface_y: int, min_y: int, cave_chance: float) -> bool:
+func _is_cave_air_fast(x: int, y: int, z: int, surface_y: int, min_y: int, cave_chance: float, spawn_radius: int, tunnel_threshold: float, pocket_threshold: float) -> bool:
+	if abs(x) <= spawn_radius + 3 and abs(z) <= spawn_radius + 3:
+		return false
 	if y <= min_y + 2 or y >= surface_y - 4:
 		return false
-	var tunnel := VoxelMathScript.value_noise(x * 0.095 + 7.0, z * 0.095 - 11.0, world_seed + y * 13)
-	var pocket := VoxelMathScript.value_noise((x + y) * 0.055, (z - y) * 0.055, world_seed + 511)
-	var depth_bonus := clampf(float(surface_y - y) / 38.0, 0.0, 0.18)
-	return tunnel > 0.72 - cave_chance * 0.15 or pocket > 0.82 - depth_bonus
+	var tunnel: float = VoxelMathScript.value_noise(x * 0.072 + float(y) * 0.018 + 7.0, z * 0.072 - float(y) * 0.011 - 11.0, world_seed + 401)
+	var cross_tunnel: float = VoxelMathScript.value_noise(x * 0.048 - float(y) * 0.016, z * 0.048 + float(y) * 0.02, world_seed + 619)
+	var pocket: float = VoxelMathScript.value_noise((x + y) * 0.046, (z - y) * 0.046, world_seed + 511)
+	var depth_bonus := clampf(float(surface_y - y) / 52.0, 0.0, 0.22)
+	var chance_shift := cave_chance * 0.13
+	return tunnel > tunnel_threshold - chance_shift or (cross_tunnel > tunnel_threshold + 0.04 - chance_shift and tunnel > 0.54) or pocket > pocket_threshold - depth_bonus
 
 
 func _add_showcase_details() -> void:
@@ -1695,15 +1878,84 @@ func _start_creative() -> void:
 
 
 func _start_game(mode: String = MODE_SURVIVAL) -> void:
-	game_mode = mode
+	_begin_world_loading(mode, true)
+
+
+func _begin_world_loading(mode: String, reset_world: bool) -> void:
+	if loading_active:
+		return
+	pending_start_mode = mode
+	pending_world_reset = reset_world
+	loading_active = true
+	loading_timer = 0.0
+	game_active = false
+	game_mode = pending_start_mode
 	health = MAX_HEALTH
+	title_layer.visible = false
+	game_over_layer.visible = false
+	inventory_layer.visible = false
+	loading_layer.visible = true
+	loading_bar.value = 0.0
+	loading_title_label.text = "Création du monde" if reset_world else "Chargement du monde"
+	loading_detail_label.text = "Préparation du terrain..."
+	_sync_hud_visibility()
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	_play_sfx("menu")
+	if pending_world_reset:
+		_clear_dropped_items()
+		player_inventory.clear()
+		_generate_world()
+	_spawn_player()
+	_rebuild_meshes()
+	loading_target_chunks = _desired_chunk_keys(_chunk_coords_for_world_position(camera.position))
+	_update_loading_ui()
+
+
+func _update_loading_state(delta: float) -> void:
+	loading_timer += delta
+	_update_loading_ui()
+	if loading_timer < INITIAL_LOAD_MIN_TIME:
+		return
+	if not _initial_world_ready():
+		return
+	_finish_world_loading()
+
+
+func _update_loading_ui() -> void:
+	if loading_bar == null:
+		return
+	var total := maxi(1, loading_target_chunks.size())
+	var generated := 0
+	var displayed := 0
+	for chunk_key in loading_target_chunks.keys():
+		if generated_chunk_keys.has(chunk_key):
+			generated += 1
+		if chunk_nodes.has(chunk_key):
+			displayed += 1
+	var progress := clampf(float(generated + displayed) / float(total * 2), 0.0, 1.0)
+	loading_bar.value = progress * 100.0
+	loading_detail_label.text = "Terrain %d/%d | Affichage %d/%d" % [generated, total, displayed, total]
+
+
+func _initial_world_ready() -> bool:
+	if not active_chunk_generation.is_empty():
+		return false
+	for chunk_key in loading_target_chunks.keys():
+		if not generated_chunk_keys.has(chunk_key):
+			return false
+		if not chunk_nodes.has(chunk_key):
+			return false
+	return chunk_generation_queue.is_empty() and chunk_rebuild_queue.is_empty()
+
+
+func _finish_world_loading() -> void:
+	loading_active = false
+	loading_layer.visible = false
 	game_active = true
 	title_layer.visible = false
 	game_over_layer.visible = false
 	inventory_layer.visible = false
-	_sync_hud_visibility()
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-	_play_sfx("menu")
 	audio_library.play_music()
 	message = "Mode survie lancé." if game_mode == MODE_SURVIVAL else "Mode créatif lancé."
 	_rebuild_hotbar()
@@ -1739,14 +1991,7 @@ func _on_patch_notes_closed() -> void:
 
 
 func _new_world_from_menu() -> void:
-	_clear_dropped_items()
-	player_inventory.clear()
-	health = MAX_HEALTH
-	_generate_world()
-	_spawn_player()
-	_rebuild_meshes()
-	_play_sfx("menu")
-	_update_hud()
+	_begin_world_loading(game_mode, true)
 
 
 func _handle_key(keycode: int) -> void:
@@ -1969,6 +2214,7 @@ func _sync_hud_visibility() -> void:
 	overlays_open = overlays_open or (title_layer != null and title_layer.visible)
 	overlays_open = overlays_open or (inventory_layer != null and inventory_layer.visible)
 	overlays_open = overlays_open or (game_over_layer != null and game_over_layer.visible)
+	overlays_open = overlays_open or (loading_layer != null and loading_layer.visible)
 	overlays_open = overlays_open or (patch_notes_controller != null and patch_notes_controller.is_open())
 	var should_show := game_active and not overlays_open
 	if hud_layer.visible != should_show:

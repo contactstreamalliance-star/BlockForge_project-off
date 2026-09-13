@@ -18,6 +18,14 @@ Terrain generation caches repeated world settings inside each chunk job, and mes
 
 Dropped item updates reuse the same frame timestamp and squared distance checks to avoid extra square-root work.
 
+## 0.4.1 loading and generation stability
+
+The title menu no longer builds the world before the player chooses a mode. Starting Survival, Creative or New World now shows a loading screen while the spawn chunks are generated and displayed.
+
+During this loading screen, gameplay stays inactive and the mouse remains free. The player receives control only after the nearby spawn chunks are ready, which avoids starting inside a half-built view.
+
+The loading screen can process extra terrain work because the player is not moving yet. Cave generation settings are copied into each chunk job so deep world generation does fewer repeated config lookups.
+
 ## 0.2.2 optimization pass
 
 The world mesh is split into 16 x 16 block chunks. Breaking or placing one block no longer rebuilds the whole world mesh.
@@ -38,10 +46,12 @@ If a machine still struggles, lower `size` first.
 
 Current default world settings are intentionally conservative for the desktop pre-alpha:
 
-- `size`: 44
-- `maxHeight`: 18
-- `waterLevel`: 6
-- `waterEnabled`: false
-- `treeChance`: 0.003
+- `size`: 192
+- `minHeight`: -42
+- `maxHeight`: 78
+- `waterLevel`: 9
+- `waterEnabled`: true
+- `treeChance`: 0.014
+- `renderDistanceChunks`: 1
 
 The spawn area is flattened into a wide clean meadow so the player does not appear under terrain, in water, inside leaves, or directly in front of a cliff.

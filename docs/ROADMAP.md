@@ -16,11 +16,25 @@
 - Health, fall damage, Game Over and respawn.
 - Dropped item recovery after death.
 
+## Pre-alpha 0.4
+
+- Worldgen V2.
+- Larger world bounds.
+- Higher mountains and deeper underground space.
+- Simple biomes for meadow, forest, coast, dry, rocky and mountain zones.
+- Safer spawn transition between the start area and natural terrain.
+- Deeper caves with tunnel and pocket noise.
+- Editable world generation settings in `assets/worldgen.json`.
+- Loading screen while creating a world.
+- Spawn chunks prepared before player control is enabled.
+
 ## Next
 
 - Main menu world selection.
-- Mod manifests.
+- Useful survival blocks: primitive furnace, chest, torches and stronger workbench progression.
 - More blocks, tools and survival systems.
+- Improved 32x32 block textures.
+- Mod manifests.
 - Cleaner modding hooks for blocks, recipes and world generation.
 
 ## Later

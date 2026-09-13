@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.1-godot - 2026-09-13
+
+- Added a loading screen for Survival, Creative and New World startup.
+- The title menu no longer generates the world before the player chooses a mode.
+- The player receives control only after nearby spawn chunks are generated and displayed.
+- Added loading progress based on generated and rendered spawn chunks.
+- Chunk generation does extra work while the loading screen is visible, keeping gameplay inactive until the start area is ready.
+- Cached cave settings inside each chunk generation job to reduce repeated config reads during underground generation.
+
+## 0.4.0-godot - 2026-09-13
+
+- Started Worldgen V2.
+- Increased world bounds to 192 blocks wide with deeper underground space and taller terrain.
+- Added simple biome selection for meadow, forest, coast, dry, rocky and mountain zones.
+- Reworked terrain height into layered continent, hill, detail and ridge noise.
+- Added height and biome caches so repeated terrain queries do less work.
+- Reworked caves with deeper tunnel and pocket noise while keeping the spawn area protected.
+- Tree density now depends on the generated biome.
+- Added editable `assets/worldgen.json` controls for biome scale, detail strength, spawn blending and cave thresholds.
+
 ## 0.3.11-godot - 2026-09-10
 
 - Reduced freezes caused by the tree-leaf visibility fix.
