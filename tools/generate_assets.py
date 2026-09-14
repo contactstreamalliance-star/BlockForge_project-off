@@ -111,6 +111,23 @@ def ore_texture(name: str, base: tuple[int, int, int], fleck: tuple[int, int, in
     img.save(TEXTURES / f"{name}.png")
 
 
+def item_texture(name: str, base: tuple[int, int, int], shine: tuple[int, int, int]) -> None:
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(name + "_item")
+    points = [(7, 1), (12, 4), (14, 9), (10, 14), (4, 14), (1, 9), (3, 4)]
+    draw.polygon(points, fill=base + (255,), outline=(28, 28, 30, 255))
+    for _ in range(10):
+        x = rng.randrange(4, 12)
+        y = rng.randrange(4, 12)
+        if rng.random() < 0.45:
+            draw.point((x, y), fill=shine + (255,))
+        else:
+            draw.point((x, y), fill=tuple(max(0, c - 32) for c in base) + (255,))
+    draw.rectangle((5, 3, 8, 4), fill=shine + (255,))
+    img.save(TEXTURES / f"{name}.png")
+
+
 def workbench() -> None:
     top = Image.new("RGBA", (16, 16), (153, 98, 48, 255))
     draw = ImageDraw.Draw(top)
@@ -197,6 +214,10 @@ def main() -> None:
     ore_texture("iron_ore", (119, 116, 108), (197, 125, 70))
     ore_texture("copper_ore", (104, 107, 102), (216, 125, 64))
     ore_texture("rare_ore", (68, 71, 88), (104, 220, 205))
+    item_texture("coal", (34, 32, 31), (82, 82, 78))
+    item_texture("raw_iron", (170, 107, 72), (231, 170, 111))
+    item_texture("raw_copper", (185, 95, 55), (239, 151, 86))
+    item_texture("forge_crystal", (42, 126, 135), (118, 247, 226))
     pixel_texture("sand", (205, 187, 119), [(225, 208, 140), (179, 163, 99), (216, 198, 128)])
     pixel_texture("wet_sand", (153, 137, 96), [(178, 162, 111), (124, 111, 82), (164, 149, 102)])
     pixel_texture("log_side", (124, 82, 42), [(88, 56, 30), (166, 110, 58), (143, 94, 48)])
