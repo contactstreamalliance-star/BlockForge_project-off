@@ -6,6 +6,8 @@
 - `ui/patch_notes_controller.gd`: loads and controls the Patch Notes screen.
 - `ui/patch_notes_panel.gd`: displays the Patch Notes screen.
 - `systems/`: reusable game systems such as audio, inventory, crafting, settings, saves and future mod support.
+- `systems/block_catalog.gd`: loads block and item definitions, prepares material lists, and exposes creative/placeable block lists.
+- `systems/game_settings.gd`: loads, saves and formats local player settings such as the memory budget.
 - `systems/player_inventory.gd`: stores collected items and spends them when crafting or placing blocks.
 - `systems/crafting_book.gd`: loads editable recipes from `assets/recipes.json`.
 - `utils/`: generic helpers that can be reused anywhere.
