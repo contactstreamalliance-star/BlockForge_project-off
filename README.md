@@ -23,7 +23,7 @@ Ce projet est indépendant de Minecraft. Il ne reprend aucun fichier, code, text
 
 ## Structure
 
-- `scripts/` : code Godot séparé par rôle.
+- `src/` : code Godot séparé par rôle.
 - `assets/` : blocs, textures, sons, langue, recettes, génération.
 - `tools/generate_assets.py` : régénère les textures et sons originaux du prototype.
 - `mods/` : emplacement prévu pour les futurs mods.
