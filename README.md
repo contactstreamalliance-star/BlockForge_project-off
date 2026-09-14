@@ -67,3 +67,15 @@ La 0.4.7 retravaille les grottes du Worldgen V2 avec tunnels principaux, branche
 La 0.4.8 ajuste la taille des grottes: petites grottes plus fréquentes, moyennes plus rares et grandes grottes très rares, avec trois seuils configurables dans `assets/worldgen.json`.
 
 La 0.4.9 corrige les sous-sols trop ouverts: les grottes sont moins hautes, les grandes salles deviennent vraiment rares, et le monde passe à 128 chunks de côté en chargement progressif.
+
+La 0.4.10 déplace la génération des chunks en tâche de fond et allège la reconstruction des meshes pour réduire fortement les freezes pendant l'exploration.
+
+La 0.4.11 découpe aussi l'insertion des chunks générés et la reconstruction des meshes sur plusieurs images, afin de réduire les freezes qui restaient après la génération en arrière-plan.
+
+La 0.4.12 ajoute une option Mémoire jeu dans le menu principal. Elle enregistre un budget mémoire sans redémarrage.
+
+La 0.4.13 corrige les objets sans icône et l'inventaire créatif: le charbon, le fer brut, le cuivre brut et l'éclat rare ont maintenant une texture dédiée et apparaissent dans la liste créative.
+
+La 0.4.14 rend l'option Mémoire jeu plus fluide: elle n'augmente plus automatiquement la distance de chunks ni les gros budgets de génération, afin d'éviter les lags ajoutés par le réglage.
+
+La 0.4.15 sépare encore le code: le catalogue des blocs/items et les réglages utilisateur ont maintenant leurs propres fichiers dans `src/systems/`, pour faciliter les futures modifications.
