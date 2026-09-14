@@ -230,25 +230,41 @@
       "id": "coal",
       "name": "Charbon",
       "placeable": false,
-      "stackable": true
+      "stackable": true,
+      "creativeInventory": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/coal.png"
+      }
     },
     {
       "id": "raw_iron",
       "name": "Fer brut",
       "placeable": false,
-      "stackable": true
+      "stackable": true,
+      "creativeInventory": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/raw_iron.png"
+      }
     },
     {
       "id": "raw_copper",
       "name": "Cuivre brut",
       "placeable": false,
-      "stackable": true
+      "stackable": true,
+      "creativeInventory": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/raw_copper.png"
+      }
     },
     {
       "id": "forge_crystal",
       "name": "Éclat rare",
       "placeable": false,
-      "stackable": true
+      "stackable": true,
+      "creativeInventory": true,
+      "textures": {
+        "all": "res://assets/textures/blocks/forge_crystal.png"
+      }
     }
   ],
   "hotbar": ["grass", "dirt", "stone", "gravel", "log", "planks", "cobble", "deep_stone", "workbench"]
